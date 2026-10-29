@@ -21,6 +21,7 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 /* Include the project buttons' 1px border in the shared content inset. */
 .sidebar-new-chat { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 28px; margin: 4px 6px 0; padding: 0 6px; border: 1px solid var(--shell-border); border-radius: 6px; color: inherit; text-align: left; }
 :root .sidebar-header { flex-basis: 36px; padding-left: 13px; }
+.sidebar-header h2 { font-size: 11px; }
 .sidebar .sidebar-new-chat:hover:not(:disabled) { background: var(--shell-hover-background); }
 .sidebar-new-chat:focus-visible { outline: 1px solid var(--shell-muted); outline-offset: -1px; }
 #import-history + #add-workspace { margin-left: -6px; }

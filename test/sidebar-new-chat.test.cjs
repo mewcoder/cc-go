@@ -46,4 +46,5 @@ test('new chat aligns with project rows and keeps the workspace heading compact 
   assert.match(rule, /gap: 8px;/);
   assert.match(rule, /min-height: 28px;/);
   assert.match(css, /:root \.sidebar-header \{ flex-basis: 36px; padding-left: 13px; \}/);
+  assert.match(css, /\.sidebar-header h2 \{ font-size: 11px; \}/);
 });
