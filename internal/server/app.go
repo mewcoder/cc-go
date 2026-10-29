@@ -276,7 +276,7 @@ func (a *App) Start() error {
 					return
 				}
 			}
-			if a.cfg.VSIX == "" {
+			if completed && a.cfg.VSIX == "" {
 				go func() { _ = a.checkPluginUpdate(a.ctx) }()
 			}
 		}

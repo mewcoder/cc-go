@@ -231,6 +231,8 @@ test('every setup step has independent title, status and action cells', () => {
 
 test('retry controls remain text buttons in the right-side actions, not version icons', async () => {
   const h = setupHarness();
+  h.state.setupComplete = true;
+  h.render();
   const steps = h.byID('setup-steps').children;
   for (const [index, step] of steps.entries()) {
     const actions = step.querySelector('.setup-actions');
@@ -247,6 +249,19 @@ test('retry controls remain text buttons in the right-side actions, not version 
   h.render();
   assert.equal(h.byID('setup-retry').textContent, '重新检测');
   assert.equal(h.byID('setup-retry').hidden, true);
+});
+
+test('initial setup shows ready status instead of update controls or update messages', () => {
+  const h = setupHarness();
+  Object.assign(h.state.pluginSetup, { latestVersion: '2.1.312' });
+  h.render();
+  const card = h.byID('setup-steps').children[1];
+  assert.equal(card.querySelector('.setup-actions').children.at(-1).hidden, true);
+  assert.equal(card.querySelector('.setup-update-status').hidden, true);
+  assert.equal(card.querySelector('.setup-card-status').textContent, '已就绪');
+  assert.equal(card.querySelector('.setup-card-status').hidden, false);
+  assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(h.byID('setup-start').disabled, false);
 });
 
 test('download progress and phases remain visible in the plugin card and clear after completion', () => {
@@ -287,6 +302,7 @@ test('download progress and phases remain visible in the plugin card and clear a
   assert.equal(progress.hidden, true);
   assert.equal(h.byID('setup-start').disabled, false);
   assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(card.querySelector('.setup-actions').children.at(-1).hidden, true);
 });
 
 test('setup has no close button and Escape cannot dismiss prerequisites', () => {
@@ -331,6 +347,7 @@ test('after first setup the panel only shows plugin updates, not environment onb
   assert.equal(h.byID('setup-steps').children[0].hidden, true);
   assert.equal(h.byID('plugin-setup').querySelector('.setup-product').hidden, true);
   assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1).hidden, false);
 });
 
 test('plugin install can retry a failed first download without a separate runtime action', async () => {

@@ -175,6 +175,7 @@
   function render(state) {
     const setup = state.pluginSetup || {};
     const view = setupView(state);
+    const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy;
     const visible = Boolean(state.pluginSetupOpen);
     root.hidden = !visible;
     if (visible && !dialog.open) dialog.showModal();
@@ -200,7 +201,7 @@
       if (index === 0) text(card.hint, current.description);
       card.hint.hidden = !card.hint.textContent || index !== 0 && current.kind === 'ready';
       card.details.hidden = card.version.hidden && card.hint.hidden;
-      card.status.hidden = index !== 0 || !view.nodeReady;
+      card.status.hidden = index === 0 ? !view.nodeReady : !initialReady;
       text(card.error, current.error || '');
       card.error.hidden = !current.error;
     });
@@ -229,7 +230,7 @@
     installLatest = updateAvailable || !view.runtimeReady || setup.status === 'cancelled';
     text(update, setup.checkingUpdate ? '检查中…' : setup.status === 'cancelled' || setup.status === 'error' && !view.runtimeReady ? '重试下载' : updateAvailable ? '更新插件' : installLatest ? '下载插件' : '检查更新');
     if (view.busy) text(update, view.busyLabel);
-    update.hidden = !view.nodeReady;
+    update.hidden = !view.nodeReady || initialReady;
     update.setAttribute('aria-label', update.textContent);
     update.disabled = view.busy || setup.checkingUpdate || !view.nodeReady;
     cancel.hidden = !setup.canCancel;
@@ -237,7 +238,7 @@
     text(updateStatus, setup.updateError ? `检查或更新失败：${setup.updateError}。${view.runtimeReady ? '已有插件仍可使用。' : '请检查网络后重试。'}`
       : updateAvailable ? `可更新至 ${setup.latestVersion}`
       : setup.latestVersion ? `未发现更新（最新稳定版 ${setup.latestVersion}）。` : '');
-    updateStatus.hidden = view.busy || !updateStatus.textContent;
+    updateStatus.hidden = view.busy || !updateStatus.textContent || !state.setupComplete && !setup.updateError;
     const indicator = $('plugin-update');
     if (indicator) {
       indicator.hidden = state.phase !== 'active' || !updateAvailable;
