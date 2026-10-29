@@ -5,6 +5,7 @@
   "description": "Go/MyGo desktop host for the original Claude Code VS Code extension (.vsix)",
   "scripts": {
     "start": "node scripts/run.cjs start",
+    "dev": "node scripts/run.cjs dev",
     "web": "node scripts/run.cjs web",
     "test": "node scripts/run.cjs test",
     "build": "node scripts/run.cjs build"

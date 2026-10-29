@@ -17,7 +17,6 @@ import (
 	"time"
 
 	runtimefiles "cc-go/runtime"
-	webfiles "cc-go/web"
 )
 
 type viewMessage struct {
@@ -130,7 +129,7 @@ func (a *App) ViewHandler() http.Handler {
 			}
 			if parts[3] == "composer.js" {
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-				b, _ := webfiles.Files.ReadFile("composer.js")
+				b, _ := a.readWebFile("composer.js")
 				_, _ = w.Write(b)
 				return
 			}
@@ -141,7 +140,7 @@ func (a *App) ViewHandler() http.Handler {
 				state = json.RawMessage("null")
 			}
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-			b, _ := webfiles.Files.ReadFile("bridge.js")
+			b, _ := a.readWebFile("bridge.js")
 			prefix, _ := json.Marshal(map[string]any{"base": base, "state": state, "theme": theme, "transcriptWidth": transcriptWidth})
 			_, _ = fmt.Fprintf(w, "const __claudeBridge = %s;\n", prefix)
 			_, _ = w.Write(b)
@@ -153,9 +152,9 @@ func (a *App) ViewHandler() http.Handler {
 			}
 			b, _ := runtimefiles.Files.ReadFile(name)
 			_, _ = w.Write(b)
-			composer, _ := webfiles.Files.ReadFile("composer.css")
+			composer, _ := a.readWebFile("composer.css")
 			_, _ = w.Write(append([]byte("\n"), composer...))
-			scrollbars, _ := webfiles.Files.ReadFile("scrollbars.css")
+			scrollbars, _ := a.readWebFile("scrollbars.css")
 			_, _ = w.Write(append([]byte("\n"), scrollbars...))
 		case "events":
 			if r.Method != "GET" {

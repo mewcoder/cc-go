@@ -80,7 +80,8 @@ test('project and branch interactions use neutral feedback, not accent colors', 
   const menuHover = css.match(/\.hud-picker-choice:is\(:hover[^{}]*\{([^}]*)\}/)[1];
   assert.match(menuHover, /color: inherit/);
   assert.match(menuHover, /background: var\(--shell-hover-background\)/);
-  assert.match(css, /\.hud-selectable:focus-visible \{ outline: 1px solid var\(--shell-muted\)/);
+  assert.match(css, /\.hud-selectable:focus \{ outline: none/);
+  assert.match(css, /\.hud-selectable:focus-visible \{ box-shadow: inset 0 -1px var\(--shell-muted\)/);
   const picker = css.match(/\.hud-picker \{([^}]*)\}/)[1];
   assert.match(picker, /background: var\(--shell-sidebar-background\)/);
   assert.match(picker, /color: inherit/);

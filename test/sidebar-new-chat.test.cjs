@@ -13,7 +13,7 @@ test('global new chat is permanently above the workspace heading with a quiet pl
   assert.ok(html.indexOf('id="new-chat"') < html.indexOf('class="sidebar-header"'));
   assert.ok(html.indexOf('class="sidebar-header"') < html.indexOf('id="workspace-list"'));
   assert.match(source, /ui\.newChat\.replaceChildren\(icon\('plus'\)/);
-  assert.match(css, /\.sidebar-new-chat[^}]*border: 0;/);
+  assert.match(css, /\.sidebar-new-chat[^}]*border: 1px solid var\(--shell-border\);/);
   assert.match(css, /\.sidebar \.sidebar-new-chat:hover:not\(:disabled\)[^}]*var\(--shell-hover-background\)/);
 });
 
@@ -42,8 +42,8 @@ test('new chat aligns with project rows and keeps the workspace heading compact 
   assert.match(shell, /\.workspace-open \{[^}]*gap: 8px;[^}]*padding: 0 6px;/);
   assert.match(rule, /margin: 4px 6px 0;/);
   assert.match(shell, /button \{[^}]*border: 1px solid transparent;/);
-  assert.match(rule, /padding: 0 7px;/);
+  assert.match(rule, /padding: 0 6px;/);
   assert.match(rule, /gap: 8px;/);
-  assert.match(rule, /min-height: 28px;/);
+  assert.match(rule, /min-height: 32px;/);
   assert.match(css, /:root \.sidebar-header \{ flex-basis: 32px; padding-left: 13px; \}/);
 });

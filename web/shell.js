@@ -232,7 +232,9 @@
   function createSettingControl(key, property, value, status) {
     const current = value ?? property.default;
     let control;
-    if (property.type === 'boolean') {
+    if (key === 'desktop.transcriptWidth') {
+      control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });
+    } else if (property.type === 'boolean') {
       control = document.createElement('input');
       control.type = 'checkbox';
       control.setAttribute('role', 'switch');
@@ -293,7 +295,7 @@
     if (!settingsData) return;
     const properties = {
       'desktop.transcriptWidth': {
-        title: 'Transcript width',
+        title: 'Transcript Width',
         description: 'Maximum width of the transcript and composer columns.',
         type: 'string', default: 'narrow',
         enum: ['narrow', 'medium', 'wide'], enumItemLabels: ['Narrow', 'Medium', 'Wide'],

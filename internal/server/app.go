@@ -27,6 +27,7 @@ import (
 
 type Config struct {
 	DataDir, Workspace, VSIX, Node, ModulesDir, ProjectsDir string
+	DevAssets                                               string
 }
 
 type Native struct {
@@ -146,6 +147,15 @@ func randomToken() string {
 
 func New(cfg Config) (*App, error) {
 	var err error
+	if cfg.DevAssets != "" {
+		cfg.DevAssets, err = filepath.Abs(cfg.DevAssets)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(filepath.Join(cfg.DevAssets, "shell.html")); err != nil {
+			return nil, fmt.Errorf("development web assets: %w", err)
+		}
+	}
 	cfg.DataDir, err = filepath.Abs(cfg.DataDir)
 	if err != nil {
 		return nil, err

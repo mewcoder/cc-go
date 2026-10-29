@@ -15,7 +15,7 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 #import-history { display: grid; place-items: center; }
 .workspace-new { opacity: 1; }
 /* Include the project buttons' 1px border in the shared content inset. */
-.sidebar-new-chat { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 28px; margin: 4px 6px 0; padding: 0 7px; border: 0; color: inherit; text-align: left; }
+.sidebar-new-chat { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 32px; margin: 4px 6px 0; padding: 0 6px; border: 1px solid var(--shell-border); border-radius: 6px; color: inherit; text-align: left; }
 :root .sidebar-header { flex-basis: 32px; padding-left: 13px; }
 .sidebar .sidebar-new-chat:hover:not(:disabled) { background: var(--shell-hover-background); }
 .sidebar-new-chat:focus-visible { outline: 1px solid var(--shell-muted); outline-offset: -1px; }
@@ -61,8 +61,9 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 .hud-added { color: var(--vscode-gitDecoration-addedResourceForeground, #73b68a); }
 .hud-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #d96b64); }
 .session-hud .hud-selectable { cursor: pointer; border-radius: 3px; }
-.session-hud .hud-selectable:hover, .session-hud .hud-selectable:focus-visible { color: inherit; background: var(--shell-hover-background); }
-.session-hud .hud-selectable:focus-visible { outline: 1px solid var(--shell-muted); outline-offset: -1px; }
+.session-hud .hud-selectable:hover { color: inherit; background: var(--shell-hover-background); }
+.session-hud .hud-selectable:focus { outline: none; }
+.session-hud .hud-selectable:focus-visible { box-shadow: inset 0 -1px var(--shell-muted); }
 .session-hud .hud-selectable::after {
   content: '';
   width: 8px;
@@ -116,6 +117,10 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 /* Optical alignment with the macOS traffic lights, in both sidebar states. */
 :root[data-platform="darwin"] .window-toggle { top: 3px; }
 .settings-panel { width: min(760px, calc(100vw - 32px)); }
+.setting-width { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.setting-width label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.setting-width input { margin: 0; accent-color: var(--settings-accent); }
+.setting-width:has(input:disabled) label { cursor: default; opacity: 0.6; }
 @media (max-width: 680px) {
   .settings-panel { width: calc(100vw - 24px); }
 }

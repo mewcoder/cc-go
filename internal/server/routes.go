@@ -15,7 +15,6 @@ import (
 	"unicode/utf16"
 
 	"cc-go/internal/sessions"
-	webfiles "cc-go/web"
 )
 
 func (a *App) Handler() http.Handler {
@@ -58,12 +57,12 @@ func (a *App) Handler() http.Handler {
 		if filename == "" || filename == "index.html" {
 			filename = "shell.html"
 		}
-		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "history.js": true, "setup.js": true, "hud.js": true, "selection.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
+		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "history.js": true, "setup.js": true, "settings-width.js": true, "hud.js": true, "selection.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
 		if !allowed[filename] {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := webfiles.Files.ReadFile(filename)
+		b, err := a.readWebFile(filename)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -72,7 +71,7 @@ func (a *App) Handler() http.Handler {
 		case filename == "shell.html":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			html := strings.Replace(string(b), "frame-src 'none'", "frame-src "+a.ViewURL+"; connect-src 'self'", 1)
-			html = strings.Replace(html, `<script src="shell.js"`, `<link rel="stylesheet" href="host.css"><link rel="stylesheet" href="scrollbars.css"><script src="host-config.js"></script><script src="hud.js"></script><script src="selection.js"></script><script src="desktop.js"></script><script src="workspace-menu.js" defer></script><script src="history.js" defer></script><script src="setup.js" defer></script><script src="shell.js"`, 1)
+			html = strings.Replace(html, `<script src="shell.js"`, `<link rel="stylesheet" href="host.css"><link rel="stylesheet" href="scrollbars.css"><script src="host-config.js"></script><script src="hud.js"></script><script src="selection.js"></script><script src="desktop.js"></script><script src="workspace-menu.js" defer></script><script src="history.js" defer></script><script src="setup.js" defer></script><script src="settings-width.js" defer></script><script src="shell.js"`, 1)
 			b = []byte(html)
 		case strings.HasSuffix(filename, ".js"):
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")

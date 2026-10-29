@@ -27,6 +27,7 @@ func main() {
 	flag.StringVar(&cfg.Node, "node", "", "Node.js executable")
 	flag.StringVar(&cfg.ModulesDir, "node-modules", "", "Optional additional npm module search directory (host dependencies are embedded)")
 	flag.StringVar(&cfg.ProjectsDir, "projects-dir", filepath.Join(home, ".claude", "projects"), "Read-only Claude transcript directory")
+	flag.StringVar(&cfg.DevAssets, "dev-assets", "", "Development only: read web assets from this directory on refresh")
 	flag.BoolVar(&web, "web", false, "Serve to a local browser instead of opening a native window")
 	flag.Parse()
 	// Finder launches have a small PATH, unlike an interactive developer shell.

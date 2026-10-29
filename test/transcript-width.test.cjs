@@ -44,7 +44,7 @@ test('each transcript preset initializes before plugin rendering and updates wit
 
 test('settings use Claude Desktop copy and keep the host preference out of plugin configuration', () => {
   const shell = fs.readFileSync(require.resolve('../web/shell.js'), 'utf8');
-  assert.match(shell, /title: 'Transcript width'/);
+  assert.match(shell, /title: 'Transcript Width'/);
   assert.match(shell, /description: 'Maximum width of the transcript and composer columns\.'/);
   assert.match(shell, /enumItemLabels: \['Narrow', 'Medium', 'Wide'\]/);
   assert.match(shell, /if \(key === 'desktop\.transcriptWidth'\) await desktop\.setTranscriptWidth\(value\)/);

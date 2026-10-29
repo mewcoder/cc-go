@@ -16,9 +16,11 @@ function run(executable, arguments_) {
 }
 switch (command) {
   case 'start':
+  case 'dev':
   case 'web': {
-    const tags = command === 'web' ? ['-tags=headless'] : [];
-    run(go, ['run', ...tags, './cmd/cc-go', ...(command === 'web' ? ['--web'] : []), ...args]);
+    const tags = command === 'start' ? [] : ['-tags=headless'];
+    run(go, ['run', ...tags, './cmd/cc-go', ...(command === 'start' ? [] : ['--web']),
+      ...(command === 'dev' ? ['--dev-assets', path.join(root, 'web')] : []), ...args]);
     break;
   }
   case 'test':
@@ -29,6 +31,6 @@ switch (command) {
     run(process.execPath, [path.join(root, 'scripts', 'build.cjs'), ...args]);
     break;
   default:
-    console.error('Usage: node scripts/run.cjs start|web|test|build [arguments]');
+    console.error('Usage: node scripts/run.cjs start|dev|web|test|build [arguments]');
     process.exit(1);
 }
