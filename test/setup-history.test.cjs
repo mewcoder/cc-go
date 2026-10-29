@@ -101,6 +101,7 @@ function setupHarness(phase = 'setup') {
     checkPluginUpdates: async () => calls.push('check-update'),
     reloadPlugin: async () => calls.push('update-plugin'),
     cancelPluginDownload: async () => calls.push('cancel-download'),
+    openPluginDownload: async () => calls.push('open-download'),
     historyProjects: async () => { if (discovery) return discovery; if (failure) throw failure; return projects; },
     importProjects: async paths => {
       if (failure) throw failure;
@@ -136,11 +137,15 @@ function setupHarness(phase = 'setup') {
   };
 }
 
-test('setup introduction keeps product copy without a redundant subtitle', () => {
+test('setup only has short English labels without product copy or a manual-install explainer', () => {
   const h = setupHarness();
   const root = h.byID('plugin-setup');
-  assert.ok(root.querySelector('.setup-product'));
+  assert.equal(root.querySelector('.setup-product'), null);
   assert.equal(root.querySelector('.setup-subtitle'), null);
+  assert.equal(h.byID('setup-title').textContent, 'Setup');
+  assert.equal(h.byID('setup-start').textContent, 'Start');
+  assert.equal(root.querySelector('.setup-offline').hidden, true);
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../web/setup.js'), 'utf8'), /\p{Script=Han}/u);
 });
 
 test('history import moves to an accessible Workspace icon outside initialization', async () => {
@@ -167,8 +172,8 @@ test('environment card keeps system information visible after Node is ready', ()
   h.state.pluginSetup.platform = 'darwin-arm64';
   h.window.__goRenderSetup(h.state);
   const environment = h.byID('setup-steps').children[0];
-  assert.equal(environment.querySelector('h2').textContent, '运行环境');
-  assert.equal(environment.querySelector('.setup-card-version').textContent, 'Node.js v22.0.0');
+  assert.equal(environment.querySelector('h2').textContent, 'Node.js');
+  assert.equal(environment.querySelector('.setup-card-version').textContent, 'v22.0.0');
   const description = environment.querySelector('.setup-card-description');
   assert.equal(description.textContent, 'macOS · arm64');
   assert.equal(description.hidden, false);
@@ -208,7 +213,7 @@ test('every setup step has independent title, status and action cells', () => {
   const h = setupHarness();
   const steps = h.byID('setup-steps').children;
   assert.equal(steps.length, 2);
-  assert.equal(steps[1].querySelector('h2').textContent, 'VS Code 插件 (.vsix)');
+  assert.equal(steps[1].querySelector('.setup-plugin-link').textContent, 'VSCode Plugin(.vsix)');
   assert.equal(steps[1].querySelector('.setup-card-description').textContent, '');
   assert.equal(steps[1].querySelector('.setup-card-description').hidden, true);
   for (const step of steps) {
@@ -229,6 +234,17 @@ test('every setup step has independent title, status and action cells', () => {
   }
 });
 
+test('plugin title is a keyboard-accessible download link that opens Open VSX externally', async () => {
+  const h = setupHarness();
+  const link = h.byID('setup-steps').children[1].querySelector('.setup-plugin-link');
+  assert.equal(link.tagName, 'a');
+  assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
+  let prevented = false;
+  link.onclick({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.deepEqual(h.calls, ['open-download']);
+});
+
 test('retry controls remain text buttons in the right-side actions, not version icons', async () => {
   const h = setupHarness();
   h.state.setupComplete = true;
@@ -237,7 +253,7 @@ test('retry controls remain text buttons in the right-side actions, not version 
   for (const [index, step] of steps.entries()) {
     const actions = step.querySelector('.setup-actions');
     const button = actions.children.at(-1);
-    assert.equal(button.textContent, index === 1 ? '检查更新' : '重新检测');
+    assert.equal(button.textContent, index === 1 ? 'Check' : 'Retry');
     assert.equal(button.children.length, 0);
     assert.ok(button.attributes['aria-label']);
     assert.equal(actions.hidden, false);
@@ -247,7 +263,7 @@ test('retry controls remain text buttons in the right-side actions, not version 
   // Legacy retry text is normalized to the same label on subsequent shell renders.
   h.byID('setup-retry').textContent = 'Reload';
   h.render();
-  assert.equal(h.byID('setup-retry').textContent, '重新检测');
+  assert.equal(h.byID('setup-retry').textContent, 'Retry');
   assert.equal(h.byID('setup-retry').hidden, true);
 });
 
@@ -258,7 +274,7 @@ test('initial setup shows ready status instead of update controls or update mess
   const card = h.byID('setup-steps').children[1];
   assert.equal(card.querySelector('.setup-actions').children.at(-1).hidden, true);
   assert.equal(card.querySelector('.setup-update-status').hidden, true);
-  assert.equal(card.querySelector('.setup-card-status').textContent, '已就绪');
+  assert.equal(card.querySelector('.setup-card-status').textContent, 'Ready');
   assert.equal(card.querySelector('.setup-card-status').hidden, false);
   assert.equal(h.byID('setup-import').hidden, true);
   assert.equal(h.byID('setup-start').disabled, false);
@@ -277,18 +293,18 @@ test('download progress and phases remain visible in the plugin card and clear a
   assert.equal(status.hidden, true);
   assert.equal(h.byID('setup-start').disabled, true);
   const action = card.querySelector('.setup-actions').children.at(-1);
-  assert.equal(action.textContent, '获取版本…');
+  assert.equal(action.textContent, 'Checking…');
   assert.equal(action.disabled, true);
   Object.assign(h.state.pluginSetup, { targetVersion: '2.1.312', received: 5 << 20, total: 10 << 20 });
   h.render();
   assert.equal(progress.max, 10 << 20);
   assert.equal(progress.value, 5 << 20);
   assert.match(status.textContent, /50%/);
-  assert.equal(action.textContent, '下载中…');
+  assert.equal(action.textContent, 'Downloading…');
   h.state.pluginSetup.total = 0;
   h.render();
-  assert.match(status.textContent, /已下载 5\.0 MB/);
-  for (const [setupStatus, expected] of [['extracting', '解压中…'], ['checking-runtime', '检查中…']]) {
+  assert.match(status.textContent, /5\.0 MB/);
+  for (const [setupStatus, expected] of [['extracting', 'Extracting…'], ['checking-runtime', 'Checking…']]) {
     h.state.pluginSetup.status = setupStatus;
     h.render();
     assert.equal(progress.hidden, true);
@@ -331,7 +347,7 @@ test('download can be cancelled and retried; import is only offered when idle', 
   Object.assign(h.state.pluginSetup, { status: 'cancelled', canCancel: false });
   h.render();
   assert.equal(cancel.hidden, true);
-  assert.equal(download.textContent, '重试下载');
+  assert.equal(download.textContent, 'Retry');
   assert.equal(download.disabled, false);
   assert.equal(h.byID('setup-import').hidden, false);
   await download.onclick();
@@ -343,11 +359,50 @@ test('after first setup the panel only shows plugin updates, not environment onb
   h.state.pluginSetupOpen = true;
   h.state.setupComplete = true;
   h.render();
-  assert.equal(h.byID('setup-title').textContent, '插件更新');
+  assert.equal(h.byID('setup-title').textContent, 'Updates');
   assert.equal(h.byID('setup-steps').children[0].hidden, true);
-  assert.equal(h.byID('plugin-setup').querySelector('.setup-product').hidden, true);
+  assert.equal(h.byID('plugin-setup').querySelector('.setup-product'), null);
   assert.equal(h.byID('setup-import').hidden, true);
   assert.equal(h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1).hidden, false);
+  assert.equal(h.byID('setup-start').textContent, 'Done');
+});
+
+test('updates use short check, available, latest and apply states without duplicate version prose', async () => {
+  const h = setupHarness('active');
+  h.state.pluginSetupOpen = true;
+  h.state.setupComplete = true;
+  const card = h.byID('setup-steps').children[1];
+  const action = card.querySelector('.setup-actions').children.at(-1);
+  const status = card.querySelector('.setup-update-status');
+  Object.assign(h.state.pluginSetup, { latestVersion: '2.1.312' });
+  h.render();
+  assert.equal(action.textContent, 'Check');
+  assert.equal(status.textContent, 'Latest');
+  assert.equal(status.parent, card.querySelector('.setup-card-details'));
+  Object.assign(h.state.pluginSetup, { latestVersion: '2.1.313', updateAvailable: true });
+  h.render();
+  assert.equal(action.textContent, 'Update');
+  assert.equal(status.textContent, '2.1.313 available');
+  await action.onclick();
+  assert.deepEqual(h.calls, ['update-plugin']);
+  h.state.phase = 'setup';
+  Object.assign(h.state.pluginSetup, { readyVersion: '2.1.313', updateAvailable: false });
+  h.render();
+  assert.equal(h.byID('setup-start').textContent, 'Apply');
+  h.state.pluginSetup.updateError = 'Network unavailable';
+  h.render();
+  assert.equal(status.textContent, 'Failed: Network unavailable');
+  assert.equal(status.attributes.role, 'alert');
+});
+
+test('a failed first download keeps its error visible even without a version', () => {
+  const h = setupHarness();
+  h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'cancelled', step: 1, updateError: 'Network unavailable' };
+  h.render();
+  const card = h.byID('setup-steps').children[1];
+  assert.equal(card.querySelector('.setup-card-details').hidden, false);
+  assert.equal(card.querySelector('.setup-update-status').hidden, false);
+  assert.equal(card.querySelector('.setup-update-status').textContent, 'Failed: Network unavailable');
 });
 
 test('plugin install can retry a failed first download without a separate runtime action', async () => {
@@ -356,7 +411,7 @@ test('plugin install can retry a failed first download without a separate runtim
   h.render();
   const card = h.byID('setup-steps').children[1];
   const action = card.querySelector('.setup-actions').children.at(-1);
-  assert.equal(action.textContent, '重试下载');
+  assert.equal(action.textContent, 'Retry');
   assert.equal(action.disabled, false);
   await action.onclick();
   assert.deepEqual(h.calls, ['update-plugin']);

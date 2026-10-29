@@ -38,6 +38,12 @@ test('setup versions have no inline action icon styling', () => {
   assert.match(css, /\.setup-vertical\.setup-updates \.setup-card \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 });
 
+test('updates use a compact right-aligned footer instead of the onboarding primary button', () => {
+  assert.match(css, /\.setup-updates \.setup-footer \{ align-items: flex-end; margin-top: 16px; \}/);
+  assert.match(css, /\.setup-vertical\.setup-updates \.setup-footer \.setup-primary \{ width: auto;[^}]*min-height: 32px/);
+  assert.doesNotMatch(css, /\.setup-product/);
+});
+
 test('narrow setup keeps actions right-aligned below details', () => {
   const narrow = css.slice(css.indexOf('@media (max-width: 560px)'));
   assert.match(narrow, /\.setup-vertical \{ width: calc\(100% - 32px\); \}/);

@@ -12,7 +12,7 @@ test('application, window and page titles use CC Go', () => {
   assert.match(desktop, /app\.SetName\("CC Go"\)/);
   assert.match(desktop, /Title: "CC Go", URL: shellURL/);
   assert.match(read('web/shell.html'), /<title>CC Go<\/title>/);
-  assert.match(read('web/setup.js'), /欢迎使用 CC Go/);
+  assert.match(read('web/setup.js'), /state\.setupComplete \? 'Updates' : 'Setup'/);
   assert.match(read('cmd/cc-go/main.go'), /fmt\.Println\("CC Go:", app\.ShellURL\)/);
 });
 

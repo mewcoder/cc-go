@@ -162,7 +162,6 @@ body:has(.setup-dialog[open]) #phase-message { display: none; }
   font-size: 13px;
 }
 .setup-vertical .setup-heading h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.4px; }
-.setup-product { margin: 8px 0 16px; max-width: 520px; color: var(--setup-muted); font-size: 12px; }
 .setup-vertical .setup-steps { display: flex; flex-direction: column; gap: 0; margin: 0; }
 .setup-vertical .setup-card {
   display: grid;
@@ -205,6 +204,9 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 /* Keep the first row independent of expanding descriptions, progress and errors. */
 .setup-card-header { grid-column: 1; grid-row: 1; display: flex; align-items: center; min-width: 0; min-height: 30px; }
 .setup-card-header h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.setup-plugin-link { color: inherit; text-decoration: underline; text-decoration-color: var(--setup-muted); text-underline-offset: 3px; }
+.setup-plugin-link:hover { color: var(--setup-accent); }
+.setup-plugin-link:focus-visible { outline: 1px solid var(--setup-accent); outline-offset: 3px; }
 .setup-card-details { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 24px; }
 .setup-card-version { min-width: 0; color: var(--setup-muted); font-size: 11px; overflow-wrap: anywhere; }
 .setup-card-status { display: flex; align-items: center; justify-content: flex-end; min-height: 30px; color: var(--setup-muted); font-size: 11px; font-weight: 400; white-space: nowrap; }
@@ -234,6 +236,8 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 .setup-vertical .setup-offline { margin-top: 12px; padding: 0; border: 0; }
 .setup-card-body > :is(.setup-card-details, .setup-install, .setup-progress, .setup-download-status, .setup-update-status, .setup-offline, .setup-step-error) { grid-column: 1 / -1; min-width: 0; }
 .setup-download-status, .setup-update-status { margin: 6px 0 0; color: var(--setup-muted); font-size: 12px; overflow-wrap: anywhere; }
+.setup-card-details > .setup-update-status { margin: 0; max-width: 100%; }
+.setup-update-status[role="alert"] { color: var(--vscode-errorForeground); }
 .setup-vertical summary { color: var(--setup-muted); font-size: 11px; cursor: pointer; }
 .setup-vertical .setup-directory { font-size: 10px; }
 .setup-vertical .setup-progress { height: 4px; margin: 12px 0 0; appearance: none; border: 0; border-radius: 2px; overflow: hidden; background: var(--setup-line); color: var(--setup-accent); accent-color: var(--setup-accent); }
@@ -257,6 +261,8 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
   font-weight: 600;
 }
 .setup-vertical .setup-footer .setup-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--setup-accent) 88%, #ffffff); }
+.setup-updates .setup-footer { align-items: flex-end; margin-top: 16px; }
+.setup-vertical.setup-updates .setup-footer .setup-primary { width: auto; min-width: 88px; min-height: 32px; padding: 0 16px; font-size: 12px; }
 .history-dialog {
   display: flex;
   flex-direction: column;
@@ -297,7 +303,6 @@ body[data-theme="light"] .history-error { color: #b64036; }
   .setup-vertical .setup-heading h1 { font-size: 20px; }
   .setup-vertical .setup-card { padding-block: 8px; }
   .setup-vertical .setup-actions { margin-top: 8px; }
-  .setup-product { margin-bottom: 8px; }
   .setup-footer { margin-top: 12px; }
 }
 @media (max-width: 560px) {
@@ -305,5 +310,3 @@ body[data-theme="light"] .history-error { color: #b64036; }
   .setup-card-body { grid-template-columns: minmax(0, 1fr) 56px; }
   .setup-vertical .setup-card-body > .setup-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-end; }
 }
-
-.setup-update-status { grid-column: 1 / -1; margin: 4px 0 0; color: var(--shell-muted); font-size: 12px; overflow-wrap: anywhere; }
