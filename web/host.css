@@ -18,6 +18,8 @@ body[data-theme] .sidebar :is(.session-time, .session-empty, .session-load-more,
 body[data-theme] .sidebar .session-row:is(.active, :hover, :focus-within) .session-time,
 body[data-theme] .sidebar .session-load-more:is(:hover, :focus-visible) { color: var(--vscode-foreground); }
 .sidebar :is(.session-time, .session-empty, .session-load-more) { font-size: 12px; font-weight: 400; }
+.sidebar .session-row:hover .session-time,
+.sidebar .session-row:has(:focus-visible) .session-time { display: none; }
 /* Keep all sidebar SVGs consistent without changing the plugin webview. */
 .window-toggle .icon,
 .sidebar .icon,

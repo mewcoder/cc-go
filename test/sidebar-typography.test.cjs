@@ -56,6 +56,13 @@ test('typography keeps the agreed heading, New Chat height and icon sizing', () 
   assert.doesNotMatch(host, /(?:^|\n)body\s*\{[^}]*font-size:/);
 });
 
+test('chat timestamps leave the layout whenever hover or keyboard focus reveals row actions', () => {
+  assert.equal(property(rule('.sidebar .session-row:hover .session-time,\n.sidebar .session-row:has(:focus-visible) .session-time'), 'display'), 'none');
+  assert.match(shell, /\.session-row:hover \.session-action, \.session-row:has\(:focus-visible\) \.session-action \{ opacity: 1; pointer-events: auto; \}/);
+  assert.match(shell, /\.session-row:hover \.session-item, \.session-row:has\(:focus-visible\) \.session-item \{ padding-right: 52px; \}/);
+  assert.doesNotMatch(host, /(?:^|\n)\.session-time\s*\{[^}]*display:\s*none/);
+});
+
 function rgb(hex) {
   return hex.replace('#', '').match(/../g).map(part => parseInt(part, 16));
 }
