@@ -34,8 +34,8 @@ func configureWindowLifecycle(app *mygo.Application, window *mygo.Window) error 
 
 	show := func() { showMainWindow(window) }
 	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Show", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
-		{Label: "Quit", Click: func(*mygo.MenuItem, *mygo.Window) { app.Quit() }},
+		{Label: "Show App", Click: func(*mygo.MenuItem, *mygo.Window) { show() }},
+		{Label: "Exit", Click: func(*mygo.MenuItem, *mygo.Window) { app.Quit() }},
 	})
 	// Attaching a Menu to a MyGo tray consumes left clicks on macOS. Keep
 	// left-click restore and show the menu only for right/Control-click.

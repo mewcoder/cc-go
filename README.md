@@ -70,10 +70,10 @@ Windows uses a single integrated 30px titlebar with native minimize/maximize/clo
 
 On macOS and Windows, closing the main window hides it instead of quitting. CC Go stays in the macOS menu bar or Windows system tray, keeping the existing window, extension host and running conversations alive. This does not enable launch at login.
 
-The tray uses a separate transparent monochrome mark that follows the system's light/dark appearance. The application, window and Dock icons are unchanged. The right-click menu contains only **Show** and **Quit**.
+The tray uses a separate transparent monochrome mark that follows the system's light/dark appearance. The application, window and Dock icons are unchanged. The right-click menu contains only **Show App** and **Exit**.
 
-- Click the CC Go tray icon to restore the window, or right-click it and choose **Show**. On macOS, clicking the Dock icon also restores the window.
-- Choose **Quit** from the tray menu to exit and stop the background host. The macOS application menu / `Cmd+Q`, or Windows **File > Quit CC Go** / `Ctrl+Q`, also exits.
+- Click the CC Go tray icon to restore the window, or right-click it and choose **Show App**. On macOS, clicking the Dock icon also restores the window.
+- Choose **Exit** from the tray menu to exit and stop the background host. The macOS application menu / `Cmd+Q`, or Windows **File > Quit CC Go** / `Ctrl+Q`, also exits.
 - Linux keeps close-to-quit behavior because a system tray is not available on every desktop. Browser-only `--web` mode is unchanged; stop its terminal process to exit.
 
 ## Packages

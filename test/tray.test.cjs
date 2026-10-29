@@ -19,17 +19,17 @@ test('macOS and Windows keep the window alive with a cancellable close hook', ()
 
 test('tray restores on left click and exposes its menu only on right click', () => {
   assert.match(tray, /mygo\.NewTray\(mygo\.TrayOptions\{ID: "cc-go", Icon: assets\.TrayIcon, IconIsTemplate: true, ToolTip: "CC Go"\}\)/);
-  assert.match(tray, /Label: "Show".*show\(\)/);
-  assert.match(tray, /Label: "Quit".*app\.Quit\(\)/);
+  assert.match(tray, /Label: "Show App".*show\(\)/);
+  assert.match(tray, /Label: "Exit".*app\.Quit\(\)/);
   assert.match(tray, /tray\.OnClick\(show\)/);
   assert.match(tray, /tray\.OnRightClick\(func\(\) \{ menu\.Popup\(nil\) \}\)/);
   assert.doesNotMatch(tray, /tray\.SetMenu|Menu: menu/);
 });
 
-test('tray menu contains only the short Show and Quit labels', () => {
+test('tray menu contains only Show App and Exit', () => {
   const menu = tray.match(/menu := mygo\.NewMenu\(\[\]\*mygo\.MenuItem\{([\s\S]*?)\n\t\}\)/)?.[1];
   assert.ok(menu, 'tray menu is present');
-  assert.deepEqual([...menu.matchAll(/Label: "([^"]+)"/g)].map(match => match[1]), ['Show', 'Quit']);
+  assert.deepEqual([...menu.matchAll(/Label: "([^"]+)"/g)].map(match => match[1]), ['Show App', 'Exit']);
   assert.doesNotMatch(menu, /Separator|Submenu/);
 });
 
