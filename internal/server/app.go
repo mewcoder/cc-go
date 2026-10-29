@@ -594,7 +594,6 @@ func (a *App) activate(ctx context.Context) (err error) {
 	}
 	a.phase, a.label = "active", "Claude Code "+a.version
 	a.setupStatus = "idle"
-	a.pluginSetupOpen = false
 	a.mu.Unlock()
 	a.Log("info", "Activated Claude Code "+a.version+" in "+workspace)
 	_, err = p.Call(deadline, "command", map[string]any{"command": "claude-vscode.editor.open"})
@@ -608,6 +607,8 @@ func (a *App) activate(ctx context.Context) (err error) {
 				a.setupSaveError = saveErr.Error()
 			}
 		}
+		// Show a failed save immediately without taking the usable host offline.
+		a.pluginSetupOpen = a.setupSaveError != ""
 		a.mu.Unlock()
 		if saveErr != nil {
 			// Keep the usable host; any later successful state save persists SetupComplete

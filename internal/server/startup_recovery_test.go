@@ -43,8 +43,12 @@ func TestActivationSurvivesSetupCompletionSaveFailure(t *testing.T) {
 	a.mu.Lock()
 	peer, active, complete := a.peer, a.active, a.state.SetupComplete
 	a.mu.Unlock()
-	if peer == nil || active == "" || !complete || a.snapshot()["phase"] != "active" {
+	snapshot := a.snapshot()
+	if peer == nil || active == "" || !complete || snapshot["phase"] != "active" {
 		t.Fatal("a persistence failure tore down the running host or view")
+	}
+	if snapshot["pluginSetupOpen"] != true || snapshot["setupCanStart"] != true {
+		t.Fatal("save warning is not reachable and dismissible after successful activation")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -60,6 +64,15 @@ func TestActivationSurvivesSetupCompletionSaveFailure(t *testing.T) {
 	setup := a.snapshot()["pluginSetup"].(map[string]any)
 	if setup["saveError"] == "" {
 		t.Fatal("nonfatal persistence failure is missing from the UI snapshot")
+	}
+	if w := postAPI(a, "/api/start", map[string]any{}); w.Code != 200 {
+		t.Fatal("could not dismiss the nonfatal warning:", w.Body.String())
+	}
+	a.mu.Lock()
+	usable := a.peer == peer && a.active == active && !a.pluginSetupOpen && a.setupSaveError != ""
+	a.mu.Unlock()
+	if !usable {
+		t.Fatal("closing the warning lost the running chat or cleared an unsaved warning")
 	}
 	if err := os.RemoveAll(blocked); err != nil {
 		t.Fatal(err)

@@ -272,8 +272,8 @@
     update.hidden = !view.nodeReady || initialReady;
     update.setAttribute('aria-label', update.textContent);
     // Metadata checks use a separate lock and cannot replace the runtime. Do not
-    // let a slow background check block local recovery after activation fails.
-    update.disabled = view.busy || (!needsRecovery && setup.checkingUpdate) || !view.nodeReady;
+    // let a slow background check block local recovery or a cancelled download retry.
+    update.disabled = view.busy || (!needsRecovery && !retryDownload && setup.checkingUpdate) || !view.nodeReady;
     cancel.hidden = !setup.canCancel;
     cancel.disabled = setup.status === 'cancelling';
     text(updateStatus, setup.updateError ? `Failed: ${setup.updateError}`

@@ -158,6 +158,8 @@ func fixtureRegistry(t *testing.T, version string, archiveVersion ...string) *in
 	}
 	digest := sha256.Sum256(archive)
 	requests := new(int)
+	var unexpectedMu sync.Mutex
+	var unexpected []string
 	original := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		*requests++
@@ -170,12 +172,21 @@ func fixtureRegistry(t *testing.T, version string, archiveVersion ...string) *in
 		case "https://fixture.invalid/plugin.vsix":
 			body = archive
 		default:
-			t.Errorf("unexpected request: %s", r.URL)
+			unexpectedMu.Lock()
+			unexpected = append(unexpected, r.URL.String())
+			unexpectedMu.Unlock()
 			return nil, errors.New("unexpected registry request: " + r.URL.String())
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})
-	t.Cleanup(func() { http.DefaultTransport = original })
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+		unexpectedMu.Lock()
+		defer unexpectedMu.Unlock()
+		for _, url := range unexpected {
+			t.Errorf("unexpected registry request: %s", url)
+		}
+	})
 	return requests
 }
 

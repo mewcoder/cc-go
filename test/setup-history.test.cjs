@@ -277,6 +277,17 @@ test('native middle-click uses the external bridge, while right-click keeps its 
   browser.byID('setup-steps').children[1].querySelector('.setup-plugin-link').handlers.auxclick({ type: 'auxclick', button: 1, preventDefault() { throw new Error('browser middle-click must follow href'); } });
 });
 
+test('native Cmd/Ctrl click opens the system browser once instead of navigating the shell', () => {
+  for (const modifier of ['metaKey', 'ctrlKey']) {
+    const h = setupHarness();
+    const link = h.byID('setup-steps').children[1].querySelector('.setup-plugin-link');
+    let prevented = false;
+    link.onclick({ [modifier]: true, preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.deepEqual(h.calls, ['open-download']);
+  }
+});
+
 test('native link failures survive state polling until a new operation starts', async () => {
   const h = setupHarness();
   h.window.desktop.openPluginDownload = async () => { throw new Error('Unable to open browser'); };
@@ -499,11 +510,12 @@ test('cancelled updates retry the download rather than tearing down the active c
   for (const updateAvailable of [false, true]) {
     const h = setupHarness('active');
     Object.assign(h.state, { setupComplete: true, pluginSetupOpen: true });
-    Object.assign(h.state.pluginSetup, { status: 'cancelled', runtimeReady: true, updateAvailable });
+    Object.assign(h.state.pluginSetup, { status: 'cancelled', runtimeReady: true, updateAvailable, checkingUpdate: true });
     h.render();
     const action = h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1);
     assert.equal(action.textContent, 'Retry');
     assert.equal(action.hidden, false);
+    assert.equal(action.disabled, false);
     await action.onclick();
     assert.deepEqual(h.calls, ['update-plugin']);
     assert.equal(h.byID('setup-start').textContent, 'Close');
@@ -517,12 +529,15 @@ test('setup save warnings are nonfatal, survive polling and clear after a succes
   h.render();
   const card = h.byID('setup-steps').children[1];
   const warning = card.querySelector('.setup-save-warning');
+  assert.equal(h.byID('plugin-setup').hidden, false);
+  assert.equal(h.byID('plugin-setup').parent.open, true);
   assert.equal(warning.attributes.role, 'status');
   assert.equal(warning.hidden, false);
   assert.equal(warning.title, 'Disk full');
   assert.match(warning.textContent, /Settings not saved.*restart/);
   assert.equal(card.querySelector('.setup-step-error').hidden, true);
   assert.equal(h.byID('setup-start').disabled, false);
+  assert.equal(h.byID('setup-start').textContent, 'Close');
   h.render();
   assert.equal(warning.hidden, false);
   h.state.pluginSetup.saveError = '';
