@@ -126,7 +126,7 @@
   progressStatus.setAttribute('role', 'status');
   progressStatus.setAttribute('aria-live', 'polite');
   cards[1].body.append(progressStatus);
-  const update = create('button', '', 'Check');
+  const update = create('button', '', 'Check for Updates');
   update.type = 'button';
   let updateAvailable = false, installLatest = false;
   update.onclick = async () => {
@@ -234,7 +234,7 @@
     $('setup-import').disabled = view.busy || !view.nodeReady;
     updateAvailable = Boolean(setup.updateAvailable);
     installLatest = updateAvailable || !view.runtimeReady || setup.status === 'cancelled';
-    text(update, setup.checkingUpdate ? 'Checking…' : setup.status === 'cancelled' || setup.status === 'error' && !view.runtimeReady ? 'Retry' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check');
+    text(update, setup.checkingUpdate ? 'Checking for Updates…' : setup.status === 'cancelled' || setup.status === 'error' && !view.runtimeReady ? 'Retry' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
     if (view.busy) text(update, view.busyLabel);
     update.hidden = !view.nodeReady || initialReady;
     update.setAttribute('aria-label', update.textContent);

@@ -253,7 +253,7 @@ test('retry controls remain text buttons in the right-side actions, not version 
   for (const [index, step] of steps.entries()) {
     const actions = step.querySelector('.setup-actions');
     const button = actions.children.at(-1);
-    assert.equal(button.textContent, index === 1 ? 'Check' : 'Retry');
+    assert.equal(button.textContent, index === 1 ? 'Check for Updates' : 'Retry');
     assert.equal(button.children.length, 0);
     assert.ok(button.attributes['aria-label']);
     assert.equal(actions.hidden, false);
@@ -367,7 +367,7 @@ test('after first setup the panel only shows plugin updates, not environment onb
   assert.equal(h.byID('setup-start').textContent, 'Close');
 });
 
-test('updates use short check, available, latest and apply states without duplicate version prose', async () => {
+test('updates use explicit check, available, latest and apply states without duplicate version prose', async () => {
   const h = setupHarness('active');
   h.state.pluginSetupOpen = true;
   h.state.setupComplete = true;
@@ -376,9 +376,15 @@ test('updates use short check, available, latest and apply states without duplic
   const status = card.querySelector('.setup-update-status');
   Object.assign(h.state.pluginSetup, { latestVersion: '2.1.312' });
   h.render();
-  assert.equal(action.textContent, 'Check');
+  assert.equal(action.textContent, 'Check for Updates');
+  assert.equal(action.attributes['aria-label'], 'Check for Updates');
   assert.equal(status.textContent, 'Latest');
   assert.equal(status.parent, card.querySelector('.setup-card-details'));
+  h.state.pluginSetup.checkingUpdate = true;
+  h.render();
+  assert.equal(action.textContent, 'Checking for Updates…');
+  assert.equal(action.disabled, true);
+  h.state.pluginSetup.checkingUpdate = false;
   Object.assign(h.state.pluginSetup, { latestVersion: '2.1.313', updateAvailable: true });
   h.render();
   assert.equal(action.textContent, 'Update');
