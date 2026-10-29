@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const zlib = require('node:zlib');
 const { build, sha256, parseArgs, findExecutable, publish } = require('../scripts/build.cjs');
 
 function fixture(t, settings = {}) {
@@ -21,7 +20,9 @@ function fixture(t, settings = {}) {
   for (const file of ['icon.ico', 'icon.icns', 'icon.png', 'cc-go.desktop']) write('assets/' + file, file);
   write('README.md', 'fixture');
   fs.mkdirSync(path.join(root, 'cmd', 'cc-go'), { recursive: true });
-  const calls = [], logs = [];
+  const calls = [], logs = [], waits = [];
+  let busyFailures = settings.busyFailures || 0;
+  let verifyBusyFailures = settings.verifyBusyFailures || 0;
   const execute = (command, args, options) => {
     calls.push({ command, args, options });
     if (args[0] === 'version') return settings.goVersion || 'go version go1.27.3 fixture/amd64';
@@ -37,18 +38,26 @@ function fixture(t, settings = {}) {
       step = 'build';
     } else if (path.basename(command) === 'codesign') {
       step = args[0] === '--verify' ? 'verify' : 'sign';
-    } else {
-      const output = args.includes('-cf') ? args[args.indexOf('-cf') + 1] : args.at(-1);
-      if (!settings.noArtifact) fs.writeFileSync(output, 'abc');
-      step = 'archive';
-    }
+    } else if (path.basename(command) === 'hdiutil') {
+      if (args[0] === 'create') {
+        const volume = args[args.indexOf('-srcfolder') + 1];
+        calls.at(-1).volume = { applications: fs.readlinkSync(path.join(volume, 'Applications')),
+          app: fs.existsSync(path.join(volume, 'CC Go.app/Contents/MacOS/cc-go')) };
+        if (!settings.noArtifact) fs.writeFileSync(args.at(-1), 'abc');
+        if (busyFailures-- > 0) throw new Error('hdiutil create failed: Resource busy');
+        step = 'dmg';
+      } else {
+        if (verifyBusyFailures-- > 0) throw new Error('hdiutil: verify failed - 资源暂时不可用');
+        step = 'dmg-verify';
+      }
+    } else throw new Error(`unexpected tool: ${command}`);
     if (settings.fail === step) throw new Error(`fixture ${step} failure`);
     return '';
   };
   const options = { root, platform: 'windows', arch: 'amd64', execute,
     findExecutable: name => settings.missing?.includes(name) ? undefined : name,
-    log: text => logs.push(text), ...settings.options };
-  return { root, write, calls, logs, options };
+    log: text => logs.push(text), wait: async ms => { waits.push(ms); }, ...settings.options };
+  return { root, write, calls, logs, waits, options };
 }
 
 test('SHA-256 uses Node streams and produces the standard digest without external tools', async t => {
@@ -122,27 +131,26 @@ for (const version of ['go version go1.27.2 fixture/amd64', 'go version go1.26.9
   });
 }
 
-test('Linux missing tar is diagnosed before compilation', async t => {
-  const h = fixture(t, { missing: ['tar'], options: { platform: 'linux' } });
-  await assert.rejects(build(h.options), /Missing tar.*Install tar/);
+test('Linux packaging is explicitly out of scope and does not create outputs', async t => {
+  const h = fixture(t, { options: { platform: 'linux' } });
+  await assert.rejects(build(h.options), /Packaging currently supports only Windows and macOS/);
   assert.equal(h.calls.length, 0);
+  assert.equal(fs.existsSync(path.join(h.root, 'build')), false);
 });
 
-test('Linux archive contains the launcher and does not call external hashing tools', async t => {
-  const h = fixture(t, { options: { platform: 'linux', arch: 'arm64' } });
-  const result = await build(h.options);
-  assert.equal(path.basename(result), 'cc-go-0.1.0-linux-arm64.tar.gz');
-  assert.equal(h.calls.at(-1).command, 'tar');
-  assert.ok(h.calls.at(-1).args.includes('-cf'));
-  assert.equal(zlib.gunzipSync(fs.readFileSync(result)).toString(), 'abc');
-  assert.equal(fs.readFileSync(result + '.sha256', 'utf8'), `${await sha256(result)}  ${path.basename(result)}\n`);
-});
+for (const target of [{ platform: 'darwin', arch: 'amd64' }, { platform: 'windows', arch: 'arm64' }]) {
+  test(`unsupported desktop architecture is rejected: ${target.platform}/${target.arch}`, async t => {
+    const h = fixture(t, { options: target });
+    await assert.rejects(build(h.options), /only macOS arm64 and Windows amd64/);
+    assert.equal(h.calls.length, 0);
+  });
+}
 
-test('macOS missing codesign/ditto is a preflight error, never an unsigned fallback', { skip: process.platform !== 'darwin' }, async t => {
-  const h = fixture(t, { missing: ['/usr/bin/codesign', '/usr/bin/ditto'], options: { platform: 'darwin' } });
+test('macOS missing codesign/hdiutil is a preflight error, never an unsigned fallback', { skip: process.platform !== 'darwin' }, async t => {
+  const h = fixture(t, { missing: ['/usr/bin/codesign', '/usr/bin/hdiutil'], options: { platform: 'darwin', arch: 'arm64' } });
   await assert.rejects(build(h.options), error => {
     assert.match(error.message, /Missing \/usr\/bin\/codesign/);
-    assert.match(error.message, /Missing \/usr\/bin\/ditto/);
+    assert.match(error.message, /Missing \/usr\/bin\/hdiutil/);
     assert.match(error.message, /signing is never skipped/);
     return true;
   });
@@ -150,11 +158,11 @@ test('macOS missing codesign/ditto is a preflight error, never an unsigned fallb
   assert.equal(fs.existsSync(path.join(h.root, 'build')), false);
 });
 
-for (const fail of ['sign', 'verify', 'archive']) {
+for (const fail of ['sign', 'verify', 'dmg', 'dmg-verify']) {
   test(`macOS ${fail} failure does not replace a previous app/package`, { skip: process.platform !== 'darwin' }, async t => {
-    const h = fixture(t, { fail, options: { platform: 'darwin' } });
+    const h = fixture(t, { fail, options: { platform: 'darwin', arch: 'arm64' } });
     const app = h.write('build/CC Go.app/previous', 'old app');
-    const archive = h.write('release/cc-go-0.1.0-darwin-amd64.zip', 'old archive');
+    const archive = h.write('release/cc-go-0.1.0-darwin-arm64.dmg', 'old archive');
     await assert.rejects(build(h.options), new RegExp(`fixture ${fail} failure`));
     assert.equal(fs.readFileSync(app, 'utf8'), 'old app');
     assert.equal(fs.readFileSync(archive, 'utf8'), 'old archive');
@@ -162,16 +170,36 @@ for (const fail of ['sign', 'verify', 'archive']) {
   });
 }
 
-test('macOS signs and verifies before archiving, publishes a fresh app without stale bundled runtimes', { skip: process.platform !== 'darwin' }, async t => {
-  const h = fixture(t, { options: { platform: 'darwin' } });
+test('macOS signs and verifies before creating a DMG, publishes a fresh app without stale bundled runtimes', { skip: process.platform !== 'darwin' }, async t => {
+  const h = fixture(t, { options: { platform: 'darwin', arch: 'arm64' } });
   h.write('build/CC Go.app/Contents/Resources/node', 'obsolete runtime');
   const result = await build(h.options);
-  assert.equal(path.basename(result), 'cc-go-0.1.0-darwin-amd64.zip');
+  assert.equal(path.basename(result), 'cc-go-0.1.0-darwin-arm64.dmg');
   const steps = h.calls.slice(2).map(call => path.basename(call.command) + ':' + call.args[0]);
-  assert.deepEqual(steps, ['codesign:--force', 'codesign:--verify', 'ditto:-c']);
+  assert.deepEqual(steps, ['codesign:--force', 'codesign:--verify', 'hdiutil:create', 'hdiutil:verify']);
+  const creation = h.calls.find(call => call.command === '/usr/bin/hdiutil' && call.args[0] === 'create');
+  assert.deepEqual(creation.volume, { applications: '/Applications', app: true });
+  assert.ok(Number.parseInt(creation.args[creation.args.indexOf('-size') + 1]) >= 32);
   assert.equal(fs.existsSync(path.join(h.root, 'build/CC Go.app/Contents/Resources/node')), false);
+  assert.equal(fs.readdirSync(path.join(h.root, 'release')).some(name => name.endsWith('.zip')), false);
   assert.match(fs.readFileSync(path.join(h.root, 'build/CC Go.app/Contents/Info.plist'), 'utf8'), /<key>CFBundleDisplayName<\/key><string>CC Go<\/string>/);
   assert.equal(fs.readFileSync(result + '.sha256', 'utf8'), `${await sha256(result)}  ${path.basename(result)}\n`);
+});
+
+test('macOS retries transient image creation and verification failures with bounded backoff', { skip: process.platform !== 'darwin' }, async t => {
+  const h = fixture(t, { busyFailures: 2, verifyBusyFailures: 1, options: { platform: 'darwin', arch: 'arm64' } });
+  await build(h.options);
+  assert.deepEqual(h.waits, [10000, 20000, 1000]);
+  assert.equal(h.calls.filter(call => call.args[0] === 'create').length, 3);
+  assert.equal(h.calls.filter(call => call.args[0] === 'verify').length, 2);
+});
+
+test('macOS stops after five busy image-creation failures without publishing', { skip: process.platform !== 'darwin' }, async t => {
+  const h = fixture(t, { busyFailures: 10, options: { platform: 'darwin', arch: 'arm64' } });
+  await assert.rejects(build(h.options), /Resource busy/);
+  assert.equal(h.calls.filter(call => call.args[0] === 'create').length, 5);
+  assert.equal(h.waits.length, 4);
+  assert.equal(fs.existsSync(path.join(h.root, 'release')), false);
 });
 
 test('publication rollback restores the previous binary/checksum pair', t => {

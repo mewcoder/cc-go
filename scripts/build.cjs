@@ -3,8 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const zlib = require('node:zlib');
-const { pipeline } = require('node:stream/promises');
+const { setTimeout: wait } = require('node:timers/promises');
 const { spawnSync } = require('node:child_process');
 
 function findExecutable(name, env = process.env) {
@@ -39,7 +38,7 @@ function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const [flag, value] = args[i].split('=');
     const key = { '--arch': 'arch', '-Arch': 'arch', '--platform': 'platform' }[flag];
-    if (!key) throw new Error(`Unknown build argument: ${args[i]}. Use --arch amd64|arm64 or --platform windows|darwin|linux.`);
+    if (!key) throw new Error(`Unknown build argument: ${args[i]}. Use --arch amd64|arm64 or --platform windows|darwin.`);
     options[key] = value ?? args[++i];
     if (!options[key]) throw new Error(`Missing value for ${flag}`);
   }
@@ -63,6 +62,16 @@ function plist(version) {
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 `;
+}
+
+function directoryBytes(directory) {
+  let total = 0;
+  for (const name of fs.readdirSync(directory)) {
+    const file = path.join(directory, name), stat = fs.lstatSync(file);
+    if (stat.isDirectory()) total += directoryBytes(file);
+    else if (stat.isFile()) total += stat.size;
+  }
+  return total;
 }
 
 // Stage all outputs first. If publishing fails, restore the previous artifacts
@@ -92,15 +101,16 @@ function publish(entries) {
 async function build(options = {}) {
   const root = options.root || path.resolve(__dirname, '..');
   const platform = options.platform || (process.platform === 'win32' ? 'windows' : process.platform);
-  const arch = options.arch || ({ x64: 'amd64', arm64: 'arm64' }[process.arch]);
+  const arch = options.arch || (platform === 'windows' ? 'amd64' : 'arm64');
   const env = { ...(options.env || process.env), CGO_ENABLED: '0' };
   // Run the resource generator on the host, not as a cross-compiled executable.
   for (const key of Object.keys(env)) if (/^GO(OS|ARCH)$/i.test(key)) delete env[key];
   const run = options.execute || execute, resolve = options.findExecutable || findExecutable;
   const log = options.log || console.log;
-  if (!['windows', 'darwin', 'linux'].includes(platform)) throw new Error(`Unsupported build platform: ${platform}`);
+  if (!['windows', 'darwin'].includes(platform)) throw new Error(`Unsupported build platform: ${platform}. Packaging currently supports only Windows and macOS.`);
   if (!['amd64', 'arm64'].includes(arch)) throw new Error(`Unsupported build architecture: ${arch}`);
-  if (platform === 'darwin' && process.platform !== 'darwin') throw new Error('macOS packaging requires a Mac for codesign and ditto.');
+  if (arch !== (platform === 'windows' ? 'amd64' : 'arm64')) throw new Error('Packaging currently supports only macOS arm64 and Windows amd64.');
+  if (platform === 'darwin' && process.platform !== 'darwin') throw new Error('macOS packaging requires a Mac for codesign and hdiutil.');
   if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Packaging requires Node.js 22 or newer.');
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version)) throw new Error('Invalid package.json version');
@@ -109,12 +119,11 @@ async function build(options = {}) {
   const requirements = [[fs.existsSync(localGo) ? localGo : 'go', 'Install Go 1.27.3+ or provide .tools/go/bin/go.']];
   if (platform === 'darwin') requirements.push(
     ['/usr/bin/codesign', "Restore Apple's codesign tool on this Mac; required ad-hoc signing is never skipped."],
-    ['/usr/bin/ditto', "Restore Apple's ditto tool on this Mac to package the app bundle."]);
-  if (platform === 'linux') requirements.push(['tar', 'Install tar and add it to PATH to create the Linux archive.']);
+    ['/usr/bin/hdiutil', "Restore Apple's hdiutil tool on this Mac to create the DMG."]);
   const tools = requirements.map(([name]) => resolve(name, env));
   const missing = requirements.filter((_, i) => !tools[i]);
   if (missing.length) throw new Error('Build prerequisites not met:\n' + missing.map(([name, help]) => `- Missing ${name}. ${help}`).join('\n'));
-  const [go, systemTool, archiveTool] = tools;
+  const [go, systemTool, diskTool] = tools;
   const host = { cwd: root, env };
   const goVersion = run(go, ['version'], { ...host, capture: true });
   const parsed = /\bgo(\d+)\.(\d+)\.(\d+)\b/.exec(goVersion);
@@ -158,25 +167,39 @@ async function build(options = {}) {
       fs.writeFileSync(path.join(contents, 'Info.plist'), plist(version));
       run(systemTool, ['--force', '--deep', '--sign', '-', application], host);
       run(systemTool, ['--verify', '--deep', '--strict', application], host);
-      artifact = path.join(work, name + '.zip');
-      run(archiveTool, ['-c', '-k', '--sequesterRsrc', '--keepParent', application, artifact], host);
-    } else {
-      const stage = path.join(work, name);
-      for (const directory of ['bin', 'share/icons/hicolor/1024x1024/apps', 'share/applications']) fs.mkdirSync(path.join(stage, directory), { recursive: true });
-      run(go, ['build', '-trimpath', '-ldflags=-s -w -X github.com/egoist/mygo.packageIdentifier=local.claude-vsix-go',
-        '-o', path.join(stage, 'bin', 'cc-go'), './cmd/cc-go'], target);
-      fs.copyFileSync(path.join(root, 'assets', 'icon.png'), path.join(stage, 'share/icons/hicolor/1024x1024/apps/cc-go.png'));
-      fs.copyFileSync(path.join(root, 'assets', 'cc-go.desktop'), path.join(stage, 'share/applications/cc-go.desktop'));
-      fs.copyFileSync(path.join(root, 'README.md'), path.join(stage, 'README.md'));
-      fs.writeFileSync(path.join(stage, 'cc-go'), '#!/bin/sh\nset -eu\nHERE=${0%/*}\nif [ "$HERE" = "$0" ]; then HERE=.; fi\nHERE=$(CDPATH= cd -- "$HERE" && pwd)\nexec "$HERE/bin/cc-go" "$@"\n', { mode: 0o755 });
-      artifact = path.join(work, name + '.tar.gz');
-      const tar = path.join(work, name + '.tar');
-      run(systemTool, ['-C', work, '-cf', tar, name], host);
-      await pipeline(fs.createReadStream(tar), zlib.createGzip(), fs.createWriteStream(artifact));
+      const volume = path.join(work, 'dmg');
+      fs.mkdirSync(volume);
+      fs.cpSync(application, path.join(volume, 'CC Go.app'), { recursive: true });
+      fs.symlinkSync('/Applications', path.join(volume, 'Applications'));
+      artifact = path.join(work, name + '.dmg');
+      // Magpie reserves headroom explicitly and retries transient hdiutil
+      // "Resource busy" failures instead of trusting its automatic sizing.
+      const size = Math.ceil(directoryBytes(volume) / 1024 / 1024 * 1.25) + 32;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          run(diskTool, ['create', '-volname', 'CC Go', '-srcfolder', volume, '-size', `${size}m`, '-ov', '-format', 'UDZO', artifact], { ...host, capture: true });
+          break;
+        } catch (error) {
+          if (!/resource busy|resource temporarily unavailable|资源忙|资源暂时不可用/i.test(error.message) || attempt === 5) throw error;
+          fs.rmSync(artifact, { force: true });
+          log(`hdiutil is busy; retrying DMG creation (${attempt}/5).`);
+          await (options.wait || wait)(attempt * 10000);
+        }
+      }
+      for (let attempt = 1; ; attempt++) {
+        try {
+          run(diskTool, ['verify', artifact], { ...host, capture: true });
+          break;
+        } catch (error) {
+          if (!/resource busy|resource temporarily unavailable|资源忙|资源暂时不可用/i.test(error.message) || attempt === 5) throw error;
+          log(`hdiutil verification is busy; retrying (${attempt}/5).`);
+          await (options.wait || wait)(attempt * 1000);
+        }
+      }
     }
+    const output = path.join(root, 'release', path.basename(artifact));
     const checksum = await sha256(artifact);
     fs.writeFileSync(artifact + '.sha256', `${checksum}  ${path.basename(artifact)}\n`, 'ascii');
-    const output = path.join(root, 'release', path.basename(artifact));
     const entries = [[artifact, output], [artifact + '.sha256', output + '.sha256']];
     if (application) entries.push([application, path.join(root, 'build', 'CC Go.app')]);
     publish(entries);

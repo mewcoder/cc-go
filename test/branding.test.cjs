@@ -38,16 +38,13 @@ test('package metadata and development entry point use cc-go', () => {
   assert.ok(fs.existsSync(path.join(__dirname, '../cmd/cc-go/main.go')));
 });
 
-test('platform executable, launcher and archive names use cc-go', () => {
+test('platform executable and installer names use cc-go', () => {
   const macLinux = read('scripts/build.cjs');
   assert.ok(macLinux.includes("path.join(contents, 'MacOS', 'cc-go')"));
   assert.ok(macLinux.includes('<key>CFBundleExecutable</key><string>cc-go</string>'));
   assert.ok(macLinux.includes('`cc-go-${version}-${platform}-${arch}`'));
-  assert.ok(macLinux.includes("name + '.zip'"));
-  assert.ok(macLinux.includes("name + '.tar.gz'"));
-  assert.ok(macLinux.includes('exec "$HERE/bin/cc-go" "$@"'));
-  assert.ok(macLinux.includes("path.join(root, 'assets', 'cc-go.desktop')"));
-  assert.ok(macLinux.includes('apps/cc-go.png'));
+  assert.ok(macLinux.includes("name + '.dmg'"));
+  assert.doesNotMatch(macLinux, /ditto|\.tar\.gz|\.zip/);
   const windows = macLinux;
   assert.ok(windows.includes("name + '.exe'"));
   assert.ok(windows.includes("'--original-filename', 'cc-go.exe'"));
@@ -56,8 +53,7 @@ test('platform executable, launcher and archive names use cc-go', () => {
   assert.doesNotMatch(windows, /Compress-Archive|Copy-Item.*node_modules/);
   assert.match(read('assets/cc-go.desktop'), /^Icon=cc-go$/m);
   assert.match(read('assets/cc-go.desktop'), /^StartupWMClass=cc-go$/m);
-  assert.ok(macLinux.includes('github.com/egoist/mygo.packageIdentifier=local.claude-vsix-go'));
-  assert.ok(read('.github/workflows/build.yml').includes('name: cc-go-${{ runner.os }}-${{ runner.arch }}'));
+  assert.ok(read('.github/workflows/build.yml').includes('name: cc-go-${{ matrix.platform }}-${{ matrix.arch }}'));
 });
 
 test('branding preserves existing user data, keychain service and URI scheme', () => {

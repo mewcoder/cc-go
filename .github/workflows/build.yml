@@ -8,15 +8,42 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate release version (manual runs build only)
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+        run: node scripts/release.cjs validate-tag
+
   build:
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-24.04]
+        include:
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            platform: windows
+            arch: amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -24,14 +51,36 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Linux desktop runtime dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-0t64 libwebkit2gtk-4.1-0
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      - run: npm run build -- --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: cc-go-${{ runner.os }}-${{ runner.arch }}
+          name: cc-go-${{ matrix.platform }}-${{ matrix.arch }}
           path: release/*
           if-no-files-found: error
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cc-go-*
+          path: release
+          merge-multiple: true
+      - name: Verify all assets, upload to draft, then publish
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { publishRelease } = require('./scripts/release.cjs');
+            await publishRelease({ github, context });
