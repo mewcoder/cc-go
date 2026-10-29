@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,10 +26,12 @@ import (
 )
 
 type Config struct {
-	DataDir, Workspace, VSIX, Claude, Node, ModulesDir, ProjectsDir string
+	DataDir, Workspace, VSIX, Node, ModulesDir, ProjectsDir string
 }
 
 type Native struct {
+	ShowMenu      func()
+	SetTheme      func(string)
 	CloseWindow   func()
 	OpenURL       func(string) error
 	OpenPath      func(string) error
@@ -38,7 +39,6 @@ type Native struct {
 	Copy          func(string) error
 	SelectFolder  func() (string, error)
 	SelectVSIX    func() (string, error)
-	SelectClaude  func() (string, error)
 	SelectNode    func() (string, error)
 	Message       func(string, string, []string) (int, error)
 }
@@ -50,7 +50,7 @@ type DesktopState struct {
 	Theme            string                       `json:"theme"`
 	Metadata         map[string]sessions.Metadata `json:"metadata"`
 	Archive          string                       `json:"archive,omitempty"`
-	Claude           string                       `json:"claude,omitempty"`
+	Claude           string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
 	Node             string                       `json:"node,omitempty"`
 	SidebarWidth     int                          `json:"sidebarWidth"`
 	SidebarCollapsed bool                         `json:"sidebarCollapsed"`
@@ -96,9 +96,14 @@ type App struct {
 	logsOpen        bool
 	settingsOpen    bool
 	pluginSetupOpen bool
+	windowHidden    bool
 	activeSessionID string
 	setupStatus     string
-	cliVersion      string
+	runtimePath     string
+	latestVersion   string
+	checkingUpdate  bool
+	updateError     string
+	updateMu        sync.Mutex
 	nodeVersion     string
 	nodePath        string
 	nodeError       string
@@ -168,9 +173,6 @@ func New(cfg Config) (*App, error) {
 	if !validTranscriptWidth(a.state.TranscriptWidth) {
 		a.state.TranscriptWidth = "narrow"
 	}
-	if cfg.Claude == "" && a.state.Claude != "" {
-		a.cfg.Claude = a.state.Claude
-	}
 	if cfg.Node == "" {
 		a.cfg.Node = a.state.Node
 	}
@@ -223,7 +225,15 @@ func validWorkspace(directory string) (string, error) {
 	return full, nil
 }
 
-func (a *App) SetNative(native Native) { a.mu.Lock(); a.native = native; a.mu.Unlock() }
+func (a *App) SetNative(native Native) {
+	a.mu.Lock()
+	a.native = native
+	theme := a.state.Theme
+	a.mu.Unlock()
+	if native.SetTheme != nil {
+		native.SetTheme(theme)
+	}
+}
 
 func (a *App) Start() error {
 	shellListener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -245,8 +255,12 @@ func (a *App) Start() error {
 		defer close(a.startDone)
 		a.opMu.Lock()
 		defer a.opMu.Unlock()
-		if err := a.prepare(a.ctx, a.cfg.VSIX); err != nil && a.ctx.Err() == nil {
-			a.fail(err)
+		if err := a.prepare(a.ctx, a.cfg.VSIX); err != nil {
+			if a.ctx.Err() == nil {
+				a.fail(err)
+			}
+		} else if a.cfg.VSIX == "" {
+			go func() { _ = a.checkPluginUpdate(a.ctx) }()
 		}
 	}()
 	return nil
@@ -344,10 +358,10 @@ func (a *App) failLocked(err error) {
 
 func (a *App) prepare(ctx context.Context, archive string) error {
 	a.mu.Lock()
-	storedArchive := archive == "" && a.state.Archive != ""
+	rememberedArchive := archive == "" && a.state.Archive != ""
 	a.phase, a.label, a.errorText = "preparing", "Checking Node.js", ""
 	a.pluginSetupOpen = true
-	a.prepared, a.version, a.cliVersion = nil, "", ""
+	a.prepared, a.version, a.runtimePath = nil, "", ""
 	a.setupStatus, a.setupStep, a.nodeError, a.nodeVersion, a.nodePath = "detecting-node", 0, "", "", ""
 	explicitNode := a.cfg.Node
 	if archive == "" {
@@ -364,49 +378,34 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	}
 	a.mu.Lock()
 	a.nodeVersion, a.nodePath = node.Version, node.Executable
-	a.setupStatus, a.setupStep, a.label = "detecting", 1, "Checking Claude Code"
+	a.setupStatus, a.setupStep, a.label = "extracting", 1, "Preparing Claude Code extension"
 	a.mu.Unlock()
-	version, detectErr := plugin.Detect(ctx, a.cfg.Claude, node.Executable)
-	a.mu.Lock()
-	a.cliVersion = version
-	a.mu.Unlock()
-	if detectErr != nil && archive == "" {
-		return detectErr
+	if rememberedArchive {
+		if _, err := os.Stat(archive); os.IsNotExist(err) {
+			archive = ""
+		}
 	}
-	if detectErr != nil {
-		a.Log("warn", "CLI detection failed; using explicitly selected VS Code extension (.vsix). Chat still requires a working Claude runtime.")
-	}
+	expectedVersion := ""
 	if archive == "" {
-		var err error
-		archive, err = a.downloadVSIX(ctx, version)
+		download, err := a.downloadVSIX(ctx, "latest")
 		if err != nil {
 			return err
 		}
+		archive, expectedVersion = download.Archive, download.Version
 	}
 	a.Log("info", "Preparing VS Code extension (.vsix): "+archive)
 	a.mu.Lock()
-	a.setupStatus, a.setupStep = "extracting", 2
+	a.setupStatus, a.setupStep = "extracting", 1
 	a.mu.Unlock()
-	prepared, err := plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), version)
-	if storedArchive && errors.Is(err, plugin.ErrVersionMismatch) {
-		// A remembered archive is a cache hint; an explicit import/--vsix stays pinned.
-		a.mu.Lock()
-		a.state.Archive = ""
-		saveErr := a.saveLocked()
-		a.mu.Unlock()
-		if saveErr != nil {
-			return saveErr
-		}
-		a.Log("info", "Remembered VS Code extension (.vsix) no longer matches Claude Code; downloading "+version)
-		archive, err = a.downloadVSIX(ctx, version)
-		if err != nil {
-			return err
-		}
-		a.mu.Lock()
-		a.setupStatus, a.setupStep = "extracting", 2
-		a.mu.Unlock()
-		prepared, err = plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), version)
+	prepared, err := plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), expectedVersion)
+	if err != nil {
+		return err
 	}
+	a.mu.Lock()
+	a.version = fmt.Sprint(prepared.PackageJSON["version"])
+	a.setupStatus, a.setupStep, a.label = "checking-runtime", 2, "Checking bundled Claude runtime"
+	a.mu.Unlock()
+	runtimePath, err := plugin.BundledRuntime(prepared.ExtensionPath, plugin.Platform())
 	if err != nil {
 		return err
 	}
@@ -414,7 +413,7 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 		return ctx.Err()
 	}
 	a.mu.Lock()
-	a.prepared, a.version = prepared, fmt.Sprint(prepared.PackageJSON["version"])
+	a.prepared, a.runtimePath = prepared, runtimePath
 	a.state.Archive, _ = filepath.Abs(archive)
 	err = a.saveLocked()
 	if err == nil {
@@ -447,36 +446,16 @@ func (a *App) reloadPlugin(ctx context.Context, archive string) error {
 	return nil
 }
 
-func (a *App) downloadVSIX(ctx context.Context, version string) (string, error) {
+func (a *App) downloadVSIX(ctx context.Context, version string) (plugin.Downloaded, error) {
 	a.mu.Lock()
-	a.label = "Downloading matching Claude Code VS Code extension (.vsix)"
-	a.setupStatus, a.setupStep = "downloading", 2
+	a.label = "Downloading latest Claude Code VS Code extension (.vsix)"
+	a.setupStatus, a.setupStep = "downloading", 1
 	a.mu.Unlock()
 	return plugin.Download(ctx, filepath.Join(a.cfg.DataDir, "vsix"), version, plugin.Platform())
 }
 
 func (a *App) runtimeScript() (string, error) {
-	names, _ := runtimefiles.Files.ReadDir(".")
-	h := sha256.New()
-	for _, entry := range names {
-		b, err := runtimefiles.Files.ReadFile(entry.Name())
-		if err != nil {
-			return "", err
-		}
-		h.Write([]byte(entry.Name()))
-		h.Write(b)
-	}
-	directory := filepath.Join(a.cfg.DataDir, "runtime", hex.EncodeToString(h.Sum(nil))[:16])
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return "", err
-	}
-	for _, entry := range names {
-		b, _ := runtimefiles.Files.ReadFile(entry.Name())
-		if err := os.WriteFile(filepath.Join(directory, entry.Name()), b, 0600); err != nil {
-			return "", err
-		}
-	}
-	return filepath.Join(directory, "extension-host.cjs"), nil
+	return runtimefiles.Prepare(filepath.Join(a.cfg.DataDir, "runtime"))
 }
 
 func (a *App) activate(ctx context.Context) (err error) {
@@ -599,6 +578,9 @@ func (a *App) detachHostLocked() *host.Peer {
 func (a *App) Close() {
 	a.closeOnce.Do(func() {
 		a.cancel()
+		a.project.close()
+		a.updateMu.Lock()
+		a.updateMu.Unlock()
 		a.opMu.Lock()
 		defer a.opMu.Unlock()
 		a.stopHost()
@@ -641,15 +623,24 @@ func (a *App) hostEvent(generation uint64, method string, args json.RawMessage) 
 			a.metrics[sessions.Key(a.state.Workspace, v.SessionID)] = v.Metrics
 		}
 	case "host.sessions":
+		projectChanged := false
 		for _, status := range v.Sessions {
 			if view := a.views[status.ViewID]; view != nil {
 				view.PendingInput = false
 			}
 			key := sessions.Key(status.Workspace, status.ID)
+			previous := a.liveSessions[key]
+			terminal := status.Status == "completed" || status.Status == "error" || status.Status == "interrupted"
+			if status.Workspace == a.state.Workspace && terminal && (previous.Status != status.Status || previous.CompletedAt != status.CompletedAt) {
+				projectChanged = true
+			}
 			a.liveSessions[key] = status
 			if status.ViewID == a.active && status.ID == a.activeSessionID && status.Status == "completed" {
 				a.markActiveReadLocked()
 			}
+		}
+		if projectChanged {
+			a.project.invalidate()
 		}
 	case "host.selection":
 		if sessions.ID.MatchString(v.SessionID) {

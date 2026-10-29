@@ -15,11 +15,12 @@ import (
 )
 
 type ProjectInfo struct {
-	Path      string      `json:"path"`
-	Name      string      `json:"name"`
-	Branch    string      `json:"branch"`
-	GitStatus string      `json:"gitStatus"`
-	Changes   *GitChanges `json:"changes,omitempty"`
+	Path       string      `json:"path"`
+	Name       string      `json:"name"`
+	Branch     string      `json:"branch"`
+	GitStatus  string      `json:"gitStatus"`
+	Changes    *GitChanges `json:"changes,omitempty"`
+	WatchError string      `json:"watchError,omitempty"`
 }
 
 type GitChanges struct {
@@ -31,20 +32,134 @@ type GitChanges struct {
 }
 
 type projectCache struct {
-	mu   sync.Mutex
-	at   time.Time
-	info ProjectInfo
+	mu         sync.Mutex
+	refreshMu  sync.Mutex
+	at         time.Time
+	info       ProjectInfo
+	generation uint64
+	read       func(context.Context, string) ProjectInfo
+	watcher    *projectWatcher // Owned by refreshMu, including shutdown.
+	watchPath  string
+	closed     bool
 }
 
 func (c *projectCache) get(directory string) ProjectInfo {
+	return c.getContext(context.Background(), directory, false)
+}
+
+func (c *projectCache) cached(directory string) ProjectInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.info.Path == directory && time.Since(c.at) < 3*time.Second {
+	if c.info.Path == directory {
 		return c.info
 	}
-	c.info = readProject(directory)
+	return ProjectInfo{Path: directory, Name: filepath.Base(directory), GitStatus: "unknown"}
+}
+
+func (c *projectCache) invalidate() {
+	c.mu.Lock()
+	c.at = time.Time{}
+	c.generation++
+	c.mu.Unlock()
+}
+
+func (c *projectCache) getContext(ctx context.Context, directory string, force bool) ProjectInfo {
+	requested := time.Now()
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	if c.closed || ctx.Err() != nil {
+		return c.cached(directory)
+	}
+	var watchError string
+	if c.read == nil {
+		if c.watcher != nil && c.watchPath != directory {
+			c.watcher.close()
+			c.watcher = nil
+		}
+		if c.watcher == nil {
+			var err error
+			c.watcher, err = newProjectWatcher(c.invalidate)
+			c.watchPath = directory
+			if err != nil {
+				watchError = "Automatic Git refresh unavailable: " + err.Error() + ". Use View > Refresh Git."
+			}
+		}
+		if c.watcher != nil {
+			probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+			c.watcher.sync(probe, directory)
+			cancel()
+			watchError = c.watcher.warning()
+		}
+	}
+	c.mu.Lock()
+	// A foreground/focus refresh may bypass the cache, but not create a
+	// process storm. Requests queued behind the same read share its result.
+	age := time.Since(c.at)
+	if c.info.Path == directory && !c.at.IsZero() && (c.at.After(requested) || age < 2*time.Second || !force) {
+		info := c.info
+		c.mu.Unlock()
+		return info
+	}
+	generation := c.generation
+	c.mu.Unlock()
+	if ctx.Err() != nil {
+		return c.cached(directory)
+	}
+	probe, cancel := context.WithTimeout(ctx, time.Second)
+	read := c.read
+	if read == nil {
+		read = readProjectContext
+	}
+	info := read(probe, directory)
+	info.WatchError = watchError
+	cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if generation != c.generation || ctx.Err() != nil {
+		return ProjectInfo{Path: directory, Name: filepath.Base(directory), GitStatus: "unknown"}
+	}
+	c.info = info
 	c.at = time.Now()
 	return c.info
+}
+
+func (c *projectCache) close() {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	c.closed = true
+	if c.watcher != nil {
+		c.watcher.close()
+		c.watcher = nil
+	}
+}
+
+func (c *projectCache) revision() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.generation
+}
+
+func (a *App) projectInfo(ctx context.Context, workspace string, force bool) *ProjectInfo {
+	a.mu.Lock()
+	allowed := a.phase == "active" && !a.pluginSetupOpen && !a.settingsOpen && !a.windowHidden && workspace == a.state.Workspace
+	a.mu.Unlock()
+	if !allowed {
+		return nil
+	}
+	info := a.project.getContext(ctx, workspace, force)
+	return &info
+}
+
+// SetWindowVisible is shared by the desktop lifecycle on every platform.
+// Webviews do not consistently report document.hidden when a window is hidden.
+func (a *App) SetWindowVisible(visible bool) {
+	a.mu.Lock()
+	changed := a.windowHidden == visible
+	a.windowHidden = !visible
+	a.mu.Unlock()
+	if changed && visible {
+		a.project.invalidate()
+	}
 }
 
 func readProject(directory string) ProjectInfo {
@@ -55,16 +170,8 @@ func readProject(directory string) ProjectInfo {
 
 func readProjectContext(ctx context.Context, directory string) ProjectInfo {
 	info := ProjectInfo{Path: directory, Name: filepath.Base(directory), GitStatus: "unknown"}
-	env := make([]string, 0)
-	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "GIT_") {
-			env = append(env, value)
-		}
-	}
-	env = append(env, "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	git := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", directory, "-c", "core.fsmonitor=false"}, args...)...)
-		cmd.Env = env
+		cmd := gitCommand(ctx, directory, args...)
 		out, err := cmd.Output()
 		return string(out), err
 	}

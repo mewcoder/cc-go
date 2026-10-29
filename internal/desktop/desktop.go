@@ -30,7 +30,15 @@ func Run(backend *server.App) error {
 				log.Printf("Dock icon: %v", err)
 			}
 		}
-		backend.SetNative(nativeServices(window))
+		menu := desktopMenu(window, runtime.GOOS)
+		app.SetMenu(menu)
+		native := nativeServices(window)
+		native.ShowMenu = func() { menu.PopupAt(window, 8, 30) }
+		backend.SetNative(native)
+		window.OnHide(func() { backend.SetWindowVisible(false) })
+		window.OnMinimize(func() { backend.SetWindowVisible(false) })
+		window.OnShow(func() { backend.SetWindowVisible(!window.IsMinimized()) })
+		window.OnRestore(func() { backend.SetWindowVisible(window.IsVisible()) })
 		window.Page().OnDidFailLoad(func(err *mygo.LoadError) {
 			log.Printf("Desktop page failed to load: %v", err)
 		})
@@ -42,7 +50,6 @@ func Run(backend *server.App) error {
 			}
 		})
 		window.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
-		app.SetMenu(desktopMenu(window, runtime.GOOS))
 		if err := configureWindowLifecycle(app, window); err != nil {
 			startupErr = fmt.Errorf("initialize system tray: %w", err)
 			app.Quit()
@@ -64,6 +71,10 @@ func windowOptions(shellURL, platform string) mygo.WindowOptions {
 	if platform == "darwin" {
 		opts.TitleBarStyle = mygo.TitleBarHidden
 		opts.TrafficLightPosition = &mygo.Point{X: 14, Y: 9}
+	} else if platform == "windows" {
+		opts.TitleBarStyle = mygo.TitleBarHidden
+		opts.TitleBarHeight = 30
+		opts.AutoHideMenuBar = true
 	}
 	return opts
 }
@@ -87,6 +98,7 @@ func nativeServices(window *mygo.Window) server.Native {
 		return paths[0], nil
 	}
 	return server.Native{
+		SetTheme:      func(theme string) { window.SetWindowButtonsTheme(mygo.ThemeSource(theme)) },
 		CloseWindow:   window.Close,
 		OpenURL:       mygo.Shell.OpenExternal,
 		OpenPath:      mygo.Shell.OpenPath,
@@ -100,9 +112,6 @@ func nativeServices(window *mygo.Window) server.Native {
 				Title:   "Import Claude Code VS Code extension (.vsix)",
 				Filters: []mygo.FileFilter{{Name: "Claude Code VS Code extension (.vsix)", Extensions: []string{"vsix"}}},
 			})
-		},
-		SelectClaude: func() (string, error) {
-			return selectFile(mygo.OpenDialogOptions{Title: "Select Claude Code executable"})
 		},
 		SelectNode: func() (string, error) {
 			return selectFile(mygo.OpenDialogOptions{Title: "Select Node.js executable (22 or newer)"})
@@ -154,6 +163,7 @@ func desktopMenu(window *mygo.Window, platform string) *mygo.Menu {
 		action("Toggle Sidebar", "CmdOrCtrl+B", "window.__goDesktopAction?.('toggle-sidebar')"),
 		action("VSIX Output", "CmdOrCtrl+Shift+U", "document.getElementById('connection-status')?.click()"),
 		action("Initialization", "", "window.__goDesktopAction?.('open-setup')"),
+		action("Refresh Git", "CmdOrCtrl+Shift+R", "window.__goDesktopAction?.('refresh-git')"),
 	}}
 	return mygo.NewMenu([]*mygo.MenuItem{{Role: mygo.RoleAppMenu}, file, {Role: mygo.RoleEditMenu}, view})
 }

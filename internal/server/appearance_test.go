@@ -10,6 +10,22 @@ import (
 	"testing"
 )
 
+func TestNativeMenuAndWindowControlThemeUseAuthenticatedSharedAPI(t *testing.T) {
+	a := testApp(t)
+	var shown int
+	var themes []string
+	a.SetNative(Native{ShowMenu: func() { shown++ }, SetTheme: func(theme string) { themes = append(themes, theme) }})
+	if w := postAPI(a, "/api/native", map[string]any{"key": "menu"}); w.Code != 200 || shown != 1 {
+		t.Fatal("native menu did not open")
+	}
+	if w := postAPI(a, "/api/theme", map[string]any{"theme": "light"}); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	if len(themes) != 2 || themes[0] != "dark" || themes[1] != "light" {
+		t.Fatalf("native controls did not follow the app theme: %v", themes)
+	}
+}
+
 func TestTranscriptWidthPersistsAndUpdatesAllViews(t *testing.T) {
 	a := testApp(t)
 	if got := a.snapshot()["transcriptWidth"]; got != "narrow" {

@@ -106,6 +106,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		Collapsed                               *bool
 		Persist                                 bool
 		Draft                                   *bool
+		Force                                   bool
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&args); err != nil {
 		http.Error(w, "Invalid request", 400)
@@ -127,6 +128,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
+	case "/api/project":
+		result = a.projectInfo(ctx, args.Workspace, args.Force)
 	case "/api/view-draft":
 		err = a.setViewDraft(args.ID, args.Draft)
 	case "/api/open-workspace-folder":
@@ -223,6 +226,12 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/api/native":
 		switch args.Key {
+		case "menu":
+			if native.ShowMenu == nil {
+				err = errors.New("application menu requires desktop mode")
+			} else {
+				native.ShowMenu()
+			}
 		case "folder":
 			if native.OpenPath == nil {
 				err = errors.New("native folder opening requires desktop mode")
@@ -254,24 +263,6 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 				a.mu.Unlock()
 				a.opMu.Unlock()
 			}
-		case "copy-install":
-			if native.Copy == nil {
-				err = errors.New("native clipboard requires desktop mode")
-			} else {
-				err = native.Copy("npm install -g @anthropic-ai/claude-code")
-			}
-		case "select-claude":
-			if native.SelectClaude == nil {
-				err = errors.New("native file selection requires desktop mode")
-			} else {
-				args.Path, err = native.SelectClaude()
-			}
-			if err == nil && args.Path != "" {
-				a.mu.Lock()
-				a.cfg.Claude, a.state.Claude = args.Path, args.Path
-				err = a.saveLocked()
-				a.mu.Unlock()
-			}
 		default:
 			err = errors.New("unknown native action")
 		}
@@ -293,6 +284,10 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		if err == nil && args.Path != "" {
 			err = a.reloadPlugin(ctx, args.Path)
 		}
+	case "/api/update-check":
+		err = a.checkPluginUpdate(ctx)
+	case "/api/update-plugin":
+		err = a.updatePlugin(ctx)
 	case "/api/retry":
 		err = a.reloadPlugin(ctx, a.cfg.VSIX)
 	case "/api/select", "/api/close":
@@ -310,6 +305,9 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			_ = v.post(message)
 		}
 		a.mu.Unlock()
+		if err == nil && native.SetTheme != nil {
+			native.SetTheme(args.Theme)
+		}
 	case "/api/session-meta":
 		// HTML maxlength counts UTF-16 code units, not Unicode code points.
 		if !sessions.ID.MatchString(args.ID) || args.Title != nil && len(utf16.Encode([]rune(*args.Title))) > 200 {

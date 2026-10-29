@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/egoist/mygo v0.7.3
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/zalando/go-keyring v0.2.6
 )
 

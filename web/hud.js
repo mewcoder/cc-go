@@ -40,10 +40,10 @@
     const deletedText = hasChanges && changes.deleted ? `-${exact(changes.deleted)}` : '';
     return {
       project: { text: project.name || missing, title: project.path || state.workspace || 'Project directory unavailable' },
-      branch: { text: branch, title: project.gitStatus === 'none' ? 'This directory is not in a Git repository'
-        : project.gitStatus === 'detached' ? `Detached HEAD: ${project.branch}` : project.branch || 'Git information unavailable' },
+      branch: { text: branch, title: [project.gitStatus === 'none' ? 'This directory is not in a Git repository'
+        : project.gitStatus === 'detached' ? `Detached HEAD: ${project.branch}` : project.branch || 'Git information unavailable', project.watchError].filter(Boolean).join('. ') },
       changes: { hidden: !hasChanges, text: [filesText, addedText, deletedText].filter(Boolean).join(' '), filesText, addedText, deletedText,
-        title: hasChanges ? `Uncommitted changes across this repository: ${changes.files} files, including ${changes.untracked} untracked. Text changes compared with HEAD (staged and unstaged combined), including new untracked text files: +${exact(changes.added)} / -${exact(changes.deleted)} lines. ${changes.binary} binary files are excluded from line totals. Refreshes about every 3 seconds.` : 'No Git changes available' },
+        title: hasChanges ? `Uncommitted changes across this repository: ${changes.files} files, including ${changes.untracked} untracked. Text changes compared with HEAD (staged and unstaged combined), including new untracked text files: +${exact(changes.added)} / -${exact(changes.deleted)} lines. ${changes.binary} binary files are excluded from line totals. Native file notifications refresh external edits with debounce/rate limiting. Also refreshes on project/branch changes, window focus/restore and completed Claude operations. Click to refresh, or use View > Refresh Git. No periodic Git polling. ${project.watchError || ''}` : 'No Git changes available' },
       context: { hidden: !contextText && !cacheText, text: [contextText, cacheText].filter(Boolean).join(' \u00b7 '),
         title: `Current context: ${exact(m.contextTokens)} / ${exact(m.contextWindow)} tokens. ${windowSource} Native context query when available; otherwise latest request input including cache, excluding output. Not cumulative session tokens. Cache read / total input (uncached + cache read + cache write). Read: ${exact(m.cacheReadTokens)}, write: ${exact(m.cacheWriteTokens)}, total input: ${exact(totalInput)} tokens.` },
       tokens: { hidden: !valid(m.inputTokens) || !valid(m.outputTokens), text: `\u2191${tokens(m.inputTokens)} \u2193${tokens(m.outputTokens)}`,
@@ -61,14 +61,14 @@
     const fields = {};
     let editable = false, hasDraft = true;
     const select = (name, field) => {
-      if (editable && !hasDraft && enabled && positioned) actions[name]?.(field);
+      if ((name === 'changes' || editable && !hasDraft) && enabled && positioned) actions[name]?.(field);
     };
     for (const name of ['project', 'branch', 'changes', 'tokens', 'context']) {
       const field = document.createElement('span');
       field.className = `hud-${name}`;
       if (actions[name]) {
         field.setAttribute('role', 'button');
-        field.setAttribute('aria-haspopup', 'dialog');
+        if (name !== 'changes') field.setAttribute('aria-haspopup', 'dialog');
         field.addEventListener('click', () => select(name, field));
         field.addEventListener('keydown', event => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -103,11 +103,11 @@
     document.body.append(bar);
     let selection, positioned = false, enabled = false;
     function updateSelectors() {
-      for (const name of ['project', 'branch']) {
+      for (const name of ['project', 'branch', 'changes']) {
         if (!actions[name]) continue;
         const field = fields[name].field;
-        const active = editable && !hasDraft && enabled && positioned;
-        field.className = `hud-${name}${active ? ' hud-selectable' : ''}`;
+        const active = (name === 'changes' || editable && !hasDraft) && enabled && positioned;
+        field.className = `hud-${name}${active ? name === 'changes' ? ' hud-refreshable' : ' hud-selectable' : ''}`;
         field.tabIndex = active ? 0 : -1;
         field.setAttribute('aria-disabled', String(!active));
       }

@@ -18,7 +18,6 @@ func prepareChatFixture(t *testing.T, a *App) {
 		t.Skip("Node unavailable")
 	}
 	a.cfg.Node = node
-	a.cfg.Claude = filepath.Join(t.TempDir(), "missing-claude")
 	a.cfg.ModulesDir, _ = filepath.Abs("../../node_modules")
 	if err := a.prepare(context.Background(), fixtureArchive(t)); err != nil {
 		t.Fatal(err)

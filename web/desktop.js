@@ -9,11 +9,42 @@
   let latest, timer, stopped = false;
   let refreshStarted = 0, refreshApplied = 0;
   let draftUpdates = Promise.resolve();
-  const draftSensitiveActions = new Set(['workspace', 'new', 'open-session', 'select-project', 'select-branch', 'retry', 'import', 'close']);
+  const draftSensitiveActions = new Set(['workspace', 'new', 'open-session', 'select-project', 'select-branch', 'retry', 'import', 'update-plugin', 'close']);
   let sidebarWidth = 248, sidebarCollapsed = false;
   let logsPending = false;
   let hud;
   let chooser;
+  let projectPending = false, projectWorkspace, projectRevision, projectForce = true;
+  let projectFocused = document.hasFocus?.() ?? true;
+
+  function projectVisible() {
+    return !stopped && projectFocused && !document.hidden && latest?.windowVisible !== false && latest?.phase === 'active'
+      && !latest.pluginSetupOpen && !latest.settingsOpen && !latest.viewLoading;
+  }
+
+  async function refreshProject() {
+    if (!projectVisible() || projectPending) return;
+    const workspace = latest.workspace;
+    if (!workspace || !projectForce && projectWorkspace === workspace && projectRevision === latest.projectRevision) return;
+    projectForce = false;
+    projectPending = true;
+    projectWorkspace = workspace;
+    projectRevision = latest.projectRevision;
+    try {
+      const project = await request('project', { workspace, force: true });
+      if (project && latest?.workspace === workspace && projectVisible() && !projectForce) {
+        latest = { ...latest, project };
+        hud?.render(latest);
+        for (const callback of stateListeners) callback(latest);
+      }
+    } catch (error) { console.error('Git status:', error); }
+    finally { projectPending = false; }
+  }
+
+  function requestGitRefresh() {
+    projectForce = true;
+    return refreshProject();
+  }
 
   async function request(method, args) {
     const response = await fetch('/api/' + method, {
@@ -106,7 +137,8 @@
     if (!hud && window.goHUD) hud = window.goHUD.create(document, chooser ? {
       project: field => chooser.open('project', latest, field),
       branch: field => chooser.open('branch', latest, field),
-    } : undefined);
+      changes: requestGitRefresh,
+    } : { changes: requestGitRefresh });
     hud?.render(state);
     layout();
   }
@@ -117,12 +149,16 @@
     // An action refresh can overtake the background poll. Never restore its older snapshot.
     if (sequence < refreshApplied) return latest;
     refreshApplied = sequence;
+    if (latest?.windowVisible === false && state.windowVisible !== false) projectForce = true;
     latest = state;
     sidebarWidth = state.sidebarWidth;
     sidebarCollapsed = state.sidebarCollapsed;
     mountViews(state);
     for (const callback of stateListeners) callback(state);
     document.getElementById('connection-status')?.setAttribute('aria-expanded', String(state.logsOpen));
+    const menu = document.getElementById('application-menu');
+    if (menu) menu.hidden = state.nativeMenu !== true;
+    void refreshProject();
     return state;
   }
 
@@ -132,6 +168,7 @@
       for (const id of frames.keys()) await reportDraft(id, composers.get(id)?.hasDraft !== false);
     }
     const value = await request(method, args);
+    if (['select-branch', 'select-project', 'workspace', 'start'].includes(method)) projectForce = true;
     await refresh();
     return value;
   }
@@ -147,18 +184,18 @@
   Object.defineProperty(window, 'desktop', { value: Object.freeze({
     platform: config.platform,
     getState: refresh,
+    refreshGit: requestGitRefresh,
     onState(callback) { stateListeners.add(callback); return () => stateListeners.delete(callback); },
     onAction(callback) { actionListeners.add(callback); return () => actionListeners.delete(callback); },
     checkPlugin: () => invoke('retry'),
-    reloadPlugin: () => invoke('retry'),
+    reloadPlugin: () => invoke('update-plugin'),
+    checkPluginUpdates: () => invoke('update-check'),
     startUsing: () => invoke('start'),
     showPluginSetup: open => invoke('ui', { key: 'setup', open }),
-    selectClaude: async () => { await invoke('native', { key: 'select-claude' }); return invoke('retry'); },
     selectNode: async () => { await invoke('native', { key: 'select-node' }); return invoke('retry'); },
     downloadNode: () => invoke('native', { key: 'download-node' }),
     importPlugin: () => invoke('import'),
     openPluginDirectory: () => invoke('native', { key: 'folder' }),
-    copyInstallCommand: () => invoke('native', { key: 'copy-install' }),
     openPluginDownload: () => invoke('native', { key: 'download' }),
     showLogs: open => invoke('ui', { key: 'logs', open }),
     addWorkspace: () => invoke('workspace'),
@@ -185,6 +222,10 @@
   }), writable: false, configurable: false });
 
   window.__goDesktopAction = action => {
+    if (action === 'refresh-git') {
+      void requestGitRefresh();
+      return;
+    }
     if (action === 'open-setup') {
       void invoke('ui', { key: 'setup', open: true }).catch(error => console.error('Setup:', error));
       return;
@@ -192,8 +233,41 @@
     for (const callback of actionListeners) callback(action);
   };
   window.addEventListener('resize', layout);
+  const foreground = () => {
+    projectFocused = document.hasFocus?.() ?? true;
+    projectForce = true;
+    if (!document.hidden) void refresh().catch(error => console.error('Foreground refresh:', error));
+  };
+  window.addEventListener('focus', foreground);
+  window.addEventListener('blur', () => { projectFocused = false; });
+  window.addEventListener('pageshow', foreground);
+  document.addEventListener?.('visibilitychange', foreground);
   window.addEventListener('beforeunload', () => { stopped = true; clearTimeout(timer); });
   window.addEventListener('DOMContentLoaded', () => {
+    if (config.platform === 'win32') {
+      const menu = document.createElement('button');
+      menu.type = 'button';
+      menu.id = 'application-menu';
+      menu.className = 'window-menu window-toggle';
+      menu.hidden = true;
+      menu.title = 'Menu';
+      menu.setAttribute('aria-label', 'Application menu');
+      menu.setAttribute('aria-haspopup', 'menu');
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', width: '14', height: '14', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'aria-hidden': 'true' })) icon.setAttribute(key, value);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M4 6h16M4 12h16M4 18h16');
+      icon.append(path);
+      menu.append(icon);
+      menu.addEventListener('click', async () => {
+        if (menu.disabled) return;
+        menu.disabled = true;
+        try { await request('native', { key: 'menu' }); }
+        catch (error) { console.error('Application menu:', error); }
+        finally { menu.disabled = false; }
+      });
+      document.getElementById('window-controls')?.prepend(menu);
+    }
     const connection = document.getElementById('connection-status');
     connection.setAttribute('role', 'button');
     connection.setAttribute('aria-controls', 'log-panel');

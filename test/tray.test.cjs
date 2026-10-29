@@ -18,12 +18,27 @@ test('macOS and Windows keep the window alive with a cancellable close hook', ()
 });
 
 test('tray restores on left click and exposes its menu only on right click', () => {
-  assert.match(tray, /mygo\.NewTray\(mygo\.TrayOptions\{ID: "cc-go", Icon: assets\.Icon, ToolTip: "CC Go"\}\)/);
-  assert.match(tray, /Label: "Show CC Go".*show\(\)/);
-  assert.match(tray, /Label: "Quit CC Go".*app\.Quit\(\)/);
+  assert.match(tray, /mygo\.NewTray\(mygo\.TrayOptions\{ID: "cc-go", Icon: assets\.TrayIcon, IconIsTemplate: true, ToolTip: "CC Go"\}\)/);
+  assert.match(tray, /Label: "Show".*show\(\)/);
+  assert.match(tray, /Label: "Quit".*app\.Quit\(\)/);
   assert.match(tray, /tray\.OnClick\(show\)/);
   assert.match(tray, /tray\.OnRightClick\(func\(\) \{ menu\.Popup\(nil\) \}\)/);
   assert.doesNotMatch(tray, /tray\.SetMenu|Menu: menu/);
+});
+
+test('tray menu contains only the short Show and Quit labels', () => {
+  const menu = tray.match(/menu := mygo\.NewMenu\(\[\]\*mygo\.MenuItem\{([\s\S]*?)\n\t\}\)/)?.[1];
+  assert.ok(menu, 'tray menu is present');
+  assert.deepEqual([...menu.matchAll(/Label: "([^"]+)"/g)].map(match => match[1]), ['Show', 'Quit']);
+  assert.doesNotMatch(menu, /Separator|Submenu/);
+});
+
+test('tray has a dedicated template while window and Dock keep the application icon', () => {
+  assert.match(tray, /Icon: assets\.TrayIcon, IconIsTemplate: true/);
+  assert.doesNotMatch(tray, /Icon: assets\.Icon[,}]/);
+  assert.match(desktop, /window\.SetIcon\(assets\.Icon\)/);
+  assert.match(desktop, /app\.Dock\.SetIcon\(assets\.Icon\)/);
+  assert.match(read('assets/embed.go'), /go:embed tray\.png/);
 });
 
 test('restore only unminimizes when necessary and Dock activation restores', () => {

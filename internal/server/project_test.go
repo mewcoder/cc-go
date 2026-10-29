@@ -58,13 +58,14 @@ func TestProjectGitBranchDetachedAndNonRepository(t *testing.T) {
 
 func TestProjectCacheChangesWorkspaceAndRefreshesBranch(t *testing.T) {
 	var cache projectCache
+	t.Cleanup(cache.close)
 	first, second := t.TempDir(), t.TempDir()
 	if cache.get(first).Path != first || cache.get(second).Path != second {
 		t.Fatal("project cache reused a different workspace")
 	}
 	cache.info.Branch = "stale"
 	cache.info.GitStatus = "branch"
-	cache.at = cache.at.Add(-4 * time.Second)
+	cache.invalidate()
 	if info := cache.get(second); info.Path != second || info.Branch != "" {
 		t.Fatal("cache did not refresh")
 	}
@@ -263,7 +264,6 @@ func TestMetricsTravelThroughRealNodeHostToSnapshot(t *testing.T) {
 	}
 	a := testApp(t)
 	a.cfg.Node = node
-	a.cfg.Claude = filepath.Join(t.TempDir(), "missing-claude")
 	a.cfg.ModulesDir, _ = filepath.Abs("../../node_modules")
 	if err := a.prepare(context.Background(), fixtureArchive(t)); err != nil {
 		t.Fatal(err)

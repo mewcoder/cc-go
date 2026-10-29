@@ -10,9 +10,8 @@ ARCH=$(./scripts/go.sh env GOARCH)
 case "$(uname -s)" in
   Darwin)
     APP="$ROOT/build/CC Go.app"
-    mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/runtime/node_modules"
+    mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     ./scripts/go.sh build -trimpath -ldflags='-s -w' -o "$APP/Contents/MacOS/cc-go" ./cmd/cc-go
-    cp -R node_modules/picomatch node_modules/vscode-uri "$APP/Contents/Resources/runtime/node_modules/"
     cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
     # Remove the runtime left by older builds; use the locally installed Node.
     rm -f "$APP/Contents/Resources/node"
@@ -44,9 +43,8 @@ PLIST
   Linux)
     PACKAGE="cc-go-$VERSION-linux-$ARCH"
     STAGE="$ROOT/build/$PACKAGE"
-    mkdir -p "$STAGE/bin/node_modules" "$STAGE/share/icons/hicolor/1024x1024/apps" "$STAGE/share/applications"
+    mkdir -p "$STAGE/bin" "$STAGE/share/icons/hicolor/1024x1024/apps" "$STAGE/share/applications"
     ./scripts/go.sh build -trimpath -ldflags='-s -w -X github.com/egoist/mygo.packageIdentifier=local.claude-vsix-go' -o "$STAGE/bin/cc-go" ./cmd/cc-go
-    cp -R node_modules/picomatch node_modules/vscode-uri "$STAGE/bin/node_modules/"
     cp assets/icon.png "$STAGE/share/icons/hicolor/1024x1024/apps/cc-go.png"
     cp assets/cc-go.desktop "$STAGE/share/applications/"
     cat > "$STAGE/cc-go" <<'LAUNCHER'

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -23,7 +24,6 @@ import (
 func TestMissingNodeStopsBeforeCLIOrVSIX(t *testing.T) {
 	a := testApp(t)
 	a.cfg.Node = filepath.Join(t.TempDir(), "missing-node")
-	a.cfg.Claude = filepath.Join(t.TempDir(), "missing-claude")
 	err := a.prepare(context.Background(), filepath.Join(t.TempDir(), "missing.vsix"))
 	if err == nil || !strings.Contains(err.Error(), "Node.js") {
 		t.Fatal("Node must be the first failing check:", err)
@@ -40,31 +40,32 @@ func TestMissingNodeStopsBeforeCLIOrVSIX(t *testing.T) {
 	}
 }
 
-func TestNodeIsProbedBeforeClaude(t *testing.T) {
+func TestNodeProbeDoesNotRunSystemClaude(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix executable fixture")
 	}
 	a := testApp(t)
 	directory := t.TempDir()
 	order := filepath.Join(directory, "order")
-	for name, version := range map[string]string{"node": "v24.14.0", "claude": "1.2.3 (Claude Code)"} {
+	for name, version := range map[string]string{"node": "v24.14.0", "claude": "99.0.0 (Claude Code)"} {
 		filename := filepath.Join(directory, name)
 		contents := "#!/bin/sh\nprintf '" + name + "\\n' >> '" + order + "'\nprintf '%s\\n' '" + version + "'\n"
 		if err := os.WriteFile(filename, []byte(contents), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	a.cfg.Node, a.cfg.Claude = filepath.Join(directory, "node"), filepath.Join(directory, "claude")
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	a.cfg.Node = filepath.Join(directory, "node")
 	if err := a.prepare(context.Background(), filepath.Join(directory, "missing.vsix")); err == nil {
-		t.Fatal("missing VSIX should fail after both probes")
+		t.Fatal("missing VSIX must fail")
 	}
 	b, err := os.ReadFile(order)
-	if err != nil || string(b) != "node\nclaude\n" {
-		t.Fatalf("wrong probe order: %q %v", b, err)
+	if err != nil || string(b) != "node\n" {
+		t.Fatalf("system Claude must not be run: %q %v", b, err)
 	}
 	setup := a.snapshot()["pluginSetup"].(map[string]any)
-	if setup["step"] != 2 || setup["nodeVersion"] != "v24.14.0" || setup["cliVersion"] != "1.2.3" {
-		t.Fatalf("missing successful prerequisites: %+v", setup)
+	if setup["step"] != 1 || setup["nodeVersion"] != "v24.14.0" {
+		t.Fatalf("wrong setup: %+v", setup)
 	}
 }
 
@@ -271,7 +272,7 @@ func fixtureArchiveVersion(t *testing.T, version string) string {
 		t.Fatal(err)
 	}
 	z := zip.NewWriter(f)
-	for name, contents := range map[string]string{
+	entries := map[string]string{
 		"extension/package.json": `{"publisher":"Anthropic","name":"claude-code","version":"` + version + `","main":"extension.cjs","contributes":{"configuration":{"properties":{"claudeCode.test":{"type":"boolean","default":true}}}}}`,
 		"extension.vsixmanifest": `<PackageManifest><Metadata><Identity TargetPlatform="` + plugin.Platform() + `"/></Metadata></PackageManifest>`,
 		"extension/extension.cjs": `const vscode = require('vscode');
@@ -282,8 +283,13 @@ exports.activate = context => {
     panel.webview.onDidReceiveMessage(message => panel.webview.postMessage({echo:message}));
   }));
 };`,
-	} {
-		w, err := z.Create(name)
+	}
+	name, header := fixtureRuntimeHeader()
+	entries["extension/resources/native-binary/"+name] = string(header)
+	for name, contents := range entries {
+		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+		header.SetMode(0700)
+		w, err := z.CreateHeader(header)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -299,11 +305,7 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Skip("Node.js is not installed")
 	}
-	modules, _ := filepath.Abs("../../node_modules")
-	if _, err := os.Stat(filepath.Join(modules, "vscode-uri")); err != nil {
-		t.Fatal("run npm ci before integration tests")
-	}
-	a, err := New(Config{DataDir: t.TempDir(), Workspace: t.TempDir(), ProjectsDir: t.TempDir(), VSIX: fixtureArchive(t), Node: node, ModulesDir: modules, Claude: filepath.Join(t.TempDir(), "missing-claude")})
+	a, err := New(Config{DataDir: t.TempDir(), Workspace: t.TempDir(), ProjectsDir: t.TempDir(), VSIX: fixtureArchive(t), Node: node})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,4 +428,37 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 	if cached.phase != "setup" || cached.setupStatus != "ready" || cached.peer != nil || !cached.pluginSetupOpen {
 		t.Fatal("cached setup skipped the Start screen")
 	}
+}
+
+func fixtureRuntimeHeader() (string, []byte) {
+	b := make([]byte, 256)
+	arch := runtime.GOARCH
+	switch runtime.GOOS {
+	case "windows":
+		copy(b, "MZ")
+		binary.LittleEndian.PutUint32(b[60:], 128)
+		copy(b[128:], "PE\x00\x00")
+		machine := uint16(0x8664)
+		if arch == "arm64" {
+			machine = 0xaa64
+		}
+		binary.LittleEndian.PutUint16(b[132:], machine)
+		return "claude.exe", b
+	case "darwin":
+		binary.LittleEndian.PutUint32(b, 0xfeedfacf)
+		cpu := uint32(0x01000007)
+		if arch == "arm64" {
+			cpu = 0x0100000c
+		}
+		binary.LittleEndian.PutUint32(b[4:], cpu)
+	default:
+		copy(b, "\x7fELF")
+		b[4], b[5] = 2, 1
+		machine := uint16(62)
+		if arch == "arm64" {
+			machine = 183
+		}
+		binary.LittleEndian.PutUint16(b[18:], machine)
+	}
+	return "claude", b
 }

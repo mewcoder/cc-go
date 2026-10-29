@@ -50,7 +50,9 @@ test('platform executable, launcher and archive names use cc-go', () => {
   const windows = read('scripts/build.ps1');
   assert.ok(windows.includes('$Name = "cc-go-$Version-windows-$Arch"'));
   assert.ok(windows.includes("--original-filename 'cc-go.exe'"));
-  assert.ok(windows.includes('-o "$Stage/cc-go.exe" ./cmd/cc-go'));
+  assert.ok(windows.includes('$Executable = Join-Path $Root "release/$Name.exe"'));
+  assert.ok(windows.includes('-o $Executable ./cmd/cc-go'));
+  assert.doesNotMatch(windows, /Compress-Archive|Copy-Item.*node_modules/);
   assert.match(read('assets/cc-go.desktop'), /^Icon=cc-go$/m);
   assert.match(read('assets/cc-go.desktop'), /^StartupWMClass=cc-go$/m);
   assert.ok(macLinux.includes('github.com/egoist/mygo.packageIdentifier=local.claude-vsix-go'));

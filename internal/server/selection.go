@@ -105,13 +105,7 @@ func selectionGit(ctx context.Context, directory string, args ...string) (string
 func selectionGitRaw(ctx context.Context, directory string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", directory, "-c", "core.fsmonitor=false"}, args...)...)
-	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "GIT_") {
-			cmd.Env = append(cmd.Env, value)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
+	cmd := gitCommand(ctx, directory, args...)
 	out, err := cmd.Output()
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -227,9 +221,7 @@ func (a *App) selectBranch(ctx context.Context, id, workspace, branch string) er
 	}
 	a.stopHost()
 	_, switchErr := selectionGit(ctx, workspace, "-c", "core.hooksPath="+hooks, "switch", "--no-guess", branch)
-	a.project.mu.Lock()
-	a.project.at = time.Time{}
-	a.project.mu.Unlock()
+	a.project.invalidate()
 	activateErr := a.activate(ctx)
 	if activateErr != nil {
 		a.fail(activateErr)

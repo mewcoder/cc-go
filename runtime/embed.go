@@ -2,5 +2,7 @@ package runtimefiles
 
 import "embed"
 
-//go:embed *.cjs *.css
+//go:generate node ../scripts/vendor-runtime.cjs
+
+//go:embed *.cjs *.css deps
 var Files embed.FS

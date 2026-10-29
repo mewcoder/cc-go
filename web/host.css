@@ -45,6 +45,9 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
   font-variant-numeric: tabular-nums;
 }
 .session-hud[hidden] { display: none; }
+.session-hud .hud-refreshable { cursor: pointer; }
+.session-hud .hud-refreshable:hover { background: var(--shell-hover-background); }
+.session-hud .hud-refreshable:focus-visible { outline: 1px solid var(--shell-muted); outline-offset: -1px; }
 .session-hud::-webkit-scrollbar { display: none; }
 .session-hud:focus-visible { outline: 1px solid var(--shell-muted); outline-offset: -2px; }
 .session-hud > span { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; white-space: nowrap; }
@@ -107,6 +110,9 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 }
 .window-drag { --app-region: drag; }
 .window-drag button { --app-region: no-drag; }
+:root[data-platform="win32"] .window-drag { padding-right: calc(var(--mygo-titlebar-inset-right, 138px) + 8px); }
+:root[data-platform="win32"] .window-menu { position: absolute; z-index: 1; left: 8px; top: 3px; }
+:root[data-platform="win32"] body.sidebar-collapsed #toggle-sidebar { margin-left: 32px; }
 /* Optical alignment with the macOS traffic lights, in both sidebar states. */
 :root[data-platform="darwin"] .window-toggle { top: 3px; }
 .settings-panel { width: min(760px, calc(100vw - 32px)); }
@@ -302,3 +308,5 @@ body[data-theme="light"] .history-error { color: #b64036; }
   .setup-card-body { grid-template-columns: minmax(0, 1fr) 56px; }
   .setup-vertical .setup-card-body > .setup-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-end; }
 }
+
+.setup-update-status { grid-column: 1 / -1; margin: 4px 0 0; color: var(--shell-muted); font-size: 12px; overflow-wrap: anywhere; }

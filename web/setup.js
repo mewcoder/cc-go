@@ -6,29 +6,30 @@
     const [os, arch] = (setup.platform || '').split('-');
     const system = [{ darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[os] || os, arch].filter(Boolean).join(' · ');
     const nodeReady = Boolean(setup.nodeVersion);
-    const cliReady = Boolean(setup.cliVersion);
     const step = Number.isInteger(setup.step) ? setup.step : 0;
     const status = setup.status;
-    const busy = ['detecting-node', 'detecting', 'downloading', 'extracting', 'reloading'].includes(status)
+    const busy = ['detecting-node', 'downloading', 'extracting', 'checking-runtime', 'reloading'].includes(status)
       || state.phase === 'activating';
-    const error = setup.nodeError || setup.error || setup.cliError || setup.cacheError || '';
-    const pluginReady = ['ready', 'idle'].includes(status) || state.phase === 'active' && !busy && !error;
+    const error = setup.nodeError || setup.error || '';
+    const pluginReady = Boolean(setup.readyVersion || state.extension?.version);
+    const runtimeReady = Boolean(setup.runtimeReady);
     const cards = [
       { kind: nodeReady ? 'ready' : status === 'detecting-node' ? 'busy' : 'waiting',
         label: nodeReady ? '已就绪' : status === 'detecting-node' ? '检查中' : '待检查',
         version: nodeReady ? `Node.js ${setup.nodeVersion}` : '',
         description: [system, !nodeReady && '需要 Node.js 22 或更高版本。'].filter(Boolean).join(' · ') },
-      { kind: cliReady ? 'ready' : nodeReady && status === 'detecting' ? 'busy' : 'waiting',
-        label: cliReady ? '已就绪' : nodeReady && status === 'detecting' ? '检查中' : '待检查', version: setup.cliVersion || '' },
-      { kind: pluginReady ? 'ready' : step === 2 && busy ? 'busy' : 'waiting',
-        label: pluginReady ? '已就绪' : status === 'downloading' ? '下载中' : step === 2 && busy ? '准备中' : '待安装',
-        version: setup.readyVersion || (pluginReady ? state.extension?.version || '' : '') },
+      { kind: pluginReady ? 'ready' : nodeReady && step === 1 && busy ? 'busy' : 'waiting',
+        label: pluginReady ? '已就绪' : status === 'downloading' ? '下载中' : nodeReady && step === 1 && busy ? '准备中' : '待安装',
+        version: setup.readyVersion || state.extension?.version || '' },
+      { kind: runtimeReady ? 'ready' : step === 2 && busy ? 'busy' : 'waiting',
+        label: runtimeReady ? '已就绪' : step === 2 && busy ? '检查中' : '待检查', version: '' },
     ];
     if (error) {
-      const failed = !nodeReady ? 0 : step < 2 && !cliReady ? 1 : 2;
-      cards[failed] = { ...cards[failed], kind: 'error', label: failed === 2 ? '未完成' : '请安装', error };
+      const failed = !nodeReady ? 0 : Math.min(2, Math.max(1, step));
+      cards[failed] = { ...cards[failed], kind: 'error', label: failed === 0 ? '请安装' : '未完成', error };
     }
-    return { cards, busy, error, nodeReady, cliReady, step, pluginReady };
+    return { cards, busy, error, nodeReady, step, pluginReady, runtimeReady };
+
   }
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -82,8 +83,8 @@
   steps.replaceChildren();
   const cards = [
     ['运行环境', '需要 Node.js 22 或更高版本。'],
-    ['Claude Code CLI', '安装后重新检测。'],
-    ['VS Code 插件 (.vsix)', '匹配 Claude Code CLI 版本。'],
+    ['VS Code 插件 (.vsix)', '默认下载当前平台最新稳定版，已有插件可离线使用。'],
+    ['内置 Claude', '使用插件自带的 Claude，无需单独安装系统 CLI。'],
   ].map(([title, description], index) => {
     const row = create('li', 'setup-card');
     const number = create('span', 'setup-step-number', String(index + 1));
@@ -120,22 +121,37 @@
   });
   [$('setup-retry'), ...retryButtons].forEach((button, index) => {
     button.className = '';
-    const label = ['重新检测 Node.js', '重新检测 Claude Code CLI', '检查并准备 VS Code 插件 (.vsix)'][index];
+    const label = ['重新检测 Node.js', '检查并准备 VS Code 插件 (.vsix)', '检查插件内置 Claude'][index];
     button.title = label;
     button.setAttribute('aria-label', label);
     cards[index].retry = button;
   });
   cards[0].actions.append($('setup-retry'));
-  cards[1].actions.append($('setup-select-cli'), retryButtons[0]);
-  cards[2].actions.append($('setup-import'), retryButtons[1]);
+  cards[1].actions.append($('setup-import'));
+  cards[2].actions.append(retryButtons[1]);
   const install = $('setup-install');
-  text(install.querySelector('p'), '安装命令：');
+  install.hidden = true;
+  $('setup-select-cli').hidden = true;
   $('setup-copy-install').hidden = true;
-  cards[1].body.insertBefore(install, cards[1].error);
   const offline = root.querySelector('.setup-offline');
   text(offline.querySelector('summary'), '手动安装');
-  text(offline.querySelector('p'), '下载 VS Code 插件 (.vsix) 后导入，或放入插件文件夹。');
-  cards[2].body.append($('setup-progress'), offline);
+  text(offline.querySelector('p'), '导入对应平台的 Anthropic VS Code 插件 (.vsix)，包内必须包含 Claude 可执行文件。');
+  cards[1].body.append($('setup-progress'), offline);
+  const update = create('button', '', '检查更新');
+  update.type = 'button';
+  let updateAvailable = false, installLatest = false;
+  update.onclick = async () => {
+    update.disabled = true;
+    try {
+      if (installLatest) await window.desktop.reloadPlugin();
+      else await window.desktop.checkPluginUpdates();
+    } catch (error) { showActionError(error, 1); }
+    finally { update.disabled = false; }
+  };
+  cards[1].actions.append(update);
+  const updateStatus = create('p', 'setup-update-status');
+  updateStatus.setAttribute('role', 'status');
+  cards[1].body.append(updateStatus);
 
   const footer = create('div', 'setup-footer');
   const start = create('button', 'setup-primary', '开始使用');
@@ -191,21 +207,34 @@
       card.error.hidden = !current.error;
     });
     cards[0].version.title = setup.nodePath || '';
-    $('setup-select-cli').hidden = view.cliReady;
-    text($('setup-select-cli'), '选择程序');
-    install.hidden = !view.nodeReady || view.cliReady || view.busy;
-    offline.hidden = !view.nodeReady || view.step < 2 || view.busy || view.pluginReady;
+    $('setup-select-cli').hidden = true;
+    install.hidden = true;
+    offline.hidden = !view.nodeReady || view.busy || view.pluginReady && view.runtimeReady;
     text($('setup-open-download'), '下载插件');
     $('setup-open-download').title = '下载 VS Code 插件 (.vsix)';
     text($('setup-import'), '导入插件');
     $('setup-import').title = '导入 VS Code 插件 (.vsix)';
-    $('setup-import').hidden = view.pluginReady;
+    $('setup-import').hidden = view.pluginReady && view.runtimeReady;
     $('setup-progress').setAttribute('aria-label', '插件下载进度');
-    $('setup-retry').disabled ||= view.busy;
-    $('setup-import').disabled ||= view.busy || !view.cliReady;
-    $('setup-select-cli').disabled ||= view.busy || !view.nodeReady;
-    retryButtons[0].disabled = view.busy || !view.nodeReady;
-    retryButtons[1].disabled = view.busy || !view.cliReady;
+    $('setup-retry').disabled = view.busy;
+    $('setup-import').disabled = view.busy || !view.nodeReady;
+    retryButtons[1].disabled = view.busy || !view.nodeReady;
+    updateAvailable = Boolean(setup.updateAvailable);
+    installLatest = updateAvailable || !view.runtimeReady && Boolean(setup.latestVersion);
+    text(update, setup.checkingUpdate ? '检查中' : updateAvailable ? '更新插件' : installLatest ? '下载插件' : '检查更新');
+    update.setAttribute('aria-label', update.textContent);
+    update.disabled = view.busy || setup.checkingUpdate || !view.nodeReady;
+    text(updateStatus, setup.updateError ? `检查或更新失败：${setup.updateError}。${view.runtimeReady ? '已有插件仍可使用。' : '请检查网络后重试。'}`
+      : updateAvailable ? `可更新至 ${setup.latestVersion}，当前为 ${setup.readyVersion}。更新后点击开始使用。`
+      : setup.latestVersion ? `未发现更新（最新稳定版 ${setup.latestVersion}）。` : '');
+    updateStatus.hidden = !updateStatus.textContent;
+    const indicator = $('plugin-update');
+    if (indicator) {
+      indicator.hidden = state.phase !== 'active' || !updateAvailable;
+      indicator.disabled = view.busy;
+      indicator.title = `更新 VS Code 插件至 ${setup.latestVersion || ''}`;
+      indicator.setAttribute('aria-label', indicator.title);
+    }
     canStart = Boolean(state.setupCanStart) && !view.busy;
     start.disabled = !canStart;
     text(start, state.phase === 'active' ? '返回对话' : state.phase === 'activating' ? '正在启动' : '开始使用');

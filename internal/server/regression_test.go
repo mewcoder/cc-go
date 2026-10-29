@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -92,20 +91,6 @@ func TestViewLoadingFollowsActiveViewReadiness(t *testing.T) {
 	assertLoading(false)
 }
 
-func probeVersion(t *testing.T, a *App, version string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix executable fixture")
-	}
-	dir := t.TempDir()
-	for name, output := range map[string]string{"node": "v24.14.0", "claude": version + " (Claude Code)"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf '%s\\n' '"+output+"'\n"), 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	a.cfg.Node, a.cfg.Claude = filepath.Join(dir, "node"), filepath.Join(dir, "claude")
-}
-
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -123,90 +108,178 @@ func persistedState(t *testing.T, a *App) DesktopState {
 	return state
 }
 
-func TestRememberedVSIXRecoversAfterCLIUpgrade(t *testing.T) {
-	for _, cached := range []bool{false, true} {
-		t.Run(map[bool]string{false: "fresh archive", true: "extracted cache"}[cached], func(t *testing.T) {
+func useTestNode(t *testing.T, a *App) {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js is not installed")
+	}
+	a.cfg.Node = node
+}
+
+func TestCachedAndImportedVSIXDoNotDependOnSystemCLIOrNetwork(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "remembered", true: "explicit"}[explicit], func(t *testing.T) {
 			a := testApp(t)
-			probeVersion(t, a, "1.2.4")
-			a.state.Archive = fixtureArchive(t)
-			oldArchive := a.state.Archive
-			if cached {
-				if _, err := plugin.Prepare(a.state.Archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), "1.2.3"); err != nil {
-					t.Fatal(err)
-				}
+			useTestNode(t, a)
+			archive := fixtureArchive(t)
+			a.state.Archive = archive
+			if explicit {
+				a.cfg.VSIX = archive
 			}
-			if err := a.saveLocked(); err != nil {
-				t.Fatal(err)
-			}
-			archive, err := os.ReadFile(fixtureArchiveVersion(t, "1.2.4"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			digest := sha256.Sum256(archive)
-			failDownload, requests := true, 0
 			original := http.DefaultTransport
 			http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				requests++
-				if persistedState(t, a).Archive != "" {
-					t.Fatal("stale archive must be cleared on disk before downloading")
-				}
-				if failDownload {
-					return nil, errors.New("offline fixture")
-				}
-				var body []byte
-				switch r.URL.String() {
-				case "https://open-vsx.org/api/Anthropic/claude-code/" + plugin.Platform() + "/1.2.4":
-					body, _ = json.Marshal(map[string]any{"namespace": "Anthropic", "name": "claude-code", "version": "1.2.4", "targetPlatform": plugin.Platform(), "files": map[string]string{"download": "https://fixture.invalid/plugin.vsix", "sha256": "https://fixture.invalid/sha256"}})
-				case "https://fixture.invalid/sha256":
-					body = []byte(hex.EncodeToString(digest[:]))
-				case "https://fixture.invalid/plugin.vsix":
-					body = archive
-				default:
-					t.Fatalf("unexpected network request: %s", r.URL)
-				}
-				return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+				t.Fatalf("cached/imported VSIX must work offline: %s", r.URL)
+				return nil, errors.New("unexpected request")
 			})
 			t.Cleanup(func() { http.DefaultTransport = original })
-			w := postAPI(a, "/api/retry", map[string]any{})
-			if w.Code != 400 || !strings.Contains(w.Body.String(), "offline fixture") || a.state.Archive != "" {
-				t.Fatalf("failed download must not restore stale archive: %d %s", w.Code, w.Body.String())
+			if w := postAPI(a, "/api/retry", map[string]any{}); w.Code != 200 {
+				t.Fatalf("cached setup failed: %d %s", w.Code, w.Body.String())
 			}
-			failDownload = false
-			w = postAPI(a, "/api/retry", map[string]any{})
-			if w.Code != 200 || a.version != "1.2.4" || requests != 4 {
-				t.Fatalf("retry did not download matching version: %d %s requests=%d version=%s", w.Code, w.Body.String(), requests, a.version)
+			if a.version != "1.2.3" || a.runtimePath == "" || a.peer != nil || a.setupStatus != "ready" {
+				t.Fatalf("wrong prepared state: %s %s", a.version, a.setupStatus)
 			}
-			if a.peer != nil || a.phase != "setup" || a.setupStatus != "ready" {
-				t.Fatal("upgrade must still wait for explicit Start")
-			}
-			if state := persistedState(t, a); state.Archive == "" || state.Archive == oldArchive {
-				t.Fatalf("new archive not persisted: %+v", state)
+			if persistedState(t, a).Archive != archive {
+				t.Fatal("working archive changed")
 			}
 		})
 	}
 }
 
-func TestExplicitVSIXMismatchDoesNotDownload(t *testing.T) {
-	for _, endpoint := range []string{"/api/retry", "/api/import"} {
-		t.Run(endpoint, func(t *testing.T) {
+func fixtureRegistry(t *testing.T, version string, archiveVersion ...string) *int {
+	t.Helper()
+	packagedVersion := version
+	if len(archiveVersion) > 0 {
+		packagedVersion = archiveVersion[0]
+	}
+	archive, err := os.ReadFile(fixtureArchiveVersion(t, packagedVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(archive)
+	requests := new(int)
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		*requests++
+		var body []byte
+		switch r.URL.String() {
+		case "https://open-vsx.org/api/Anthropic/claude-code/" + plugin.Platform() + "/latest":
+			body, _ = json.Marshal(map[string]any{"namespace": "Anthropic", "name": "claude-code", "version": version, "targetPlatform": plugin.Platform(), "files": map[string]string{"download": "https://fixture.invalid/plugin.vsix", "sha256": "https://fixture.invalid/sha256"}})
+		case "https://fixture.invalid/sha256":
+			body = []byte(hex.EncodeToString(digest[:]))
+		case "https://fixture.invalid/plugin.vsix":
+			body = archive
+		default:
+			t.Fatalf("unexpected request: %s", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = original })
+	return requests
+}
+
+func TestFirstSetupDownloadsLatestStableWithoutSystemCLI(t *testing.T) {
+	a := testApp(t)
+	useTestNode(t, a)
+	requests := fixtureRegistry(t, "1.2.4")
+	if w := postAPI(a, "/api/retry", map[string]any{}); w.Code != 200 {
+		t.Fatalf("latest setup failed: %s", w.Body.String())
+	}
+	if a.version != "1.2.4" || a.runtimePath == "" || *requests != 3 {
+		t.Fatalf("wrong latest setup: version=%s requests=%d", a.version, *requests)
+	}
+}
+
+func TestMissingRememberedArchiveDownloadsLatestButExplicitMissingArchiveFails(t *testing.T) {
+	a := testApp(t)
+	useTestNode(t, a)
+	a.state.Archive = filepath.Join(t.TempDir(), "missing.vsix")
+	requests := fixtureRegistry(t, "1.2.4")
+	if err := a.prepare(context.Background(), ""); err != nil || a.version != "1.2.4" || *requests != 3 {
+		t.Fatalf("missing remembered archive did not recover: %v", err)
+	}
+	if err := a.prepare(context.Background(), filepath.Join(t.TempDir(), "explicit-missing.vsix")); err == nil || *requests != 3 {
+		t.Fatal("explicit missing archive must not silently download a replacement")
+	}
+}
+
+func TestLatestDownloadMustMatchTheResolvedVersion(t *testing.T) {
+	a := testApp(t)
+	useTestNode(t, a)
+	fixtureRegistry(t, "1.2.4", "1.2.3")
+	if err := a.prepare(context.Background(), ""); !errors.Is(err, plugin.ErrVersionMismatch) {
+		t.Fatalf("wrong version accepted: %v", err)
+	}
+	if a.prepared != nil || a.state.Archive != "" {
+		t.Fatal("wrong package became the active cache")
+	}
+}
+
+func TestPluginUpdateRefusesDraftsAndRunningConversationsBeforeDownloading(t *testing.T) {
+	for _, mode := range []string{"draft", "pending", "working"} {
+		t.Run(mode, func(t *testing.T) {
 			a := testApp(t)
-			probeVersion(t, a, "1.2.4")
-			archive := fixtureArchive(t)
-			a.cfg.VSIX, a.state.Archive = archive, archive
-			if err := a.saveLocked(); err != nil {
-				t.Fatal(err)
+			view := newView("view", "Chat", "token")
+			a.views[view.ID] = view
+			view.HasDraft, view.PendingInput = mode == "draft", mode == "pending"
+			if mode == "working" {
+				a.liveSessions["session"] = LiveSession{Status: "working"}
 			}
-			original := http.DefaultTransport
-			http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-				t.Fatalf("explicit VSIX must not be silently replaced: %s", r.URL)
-				return nil, errors.New("unexpected download")
-			})
-			t.Cleanup(func() { http.DefaultTransport = original })
-			w := postAPI(a, endpoint, map[string]any{"path": archive})
-			if w.Code != 400 || !strings.Contains(w.Body.String(), plugin.ErrVersionMismatch.Error()) || persistedState(t, a).Archive != archive {
-				t.Fatalf("explicit mismatch changed behavior: %d %s", w.Code, w.Body.String())
+			requests := fixtureRegistry(t, "1.2.4")
+			if err := a.updatePlugin(context.Background()); err == nil || *requests != 0 || a.stopping {
+				t.Fatal("unsafe update was not rejected before changing the host")
 			}
 		})
+	}
+}
+
+func TestUpdateCheckOnlyFetchesMetadataAndDoesNotReplaceCache(t *testing.T) {
+	a := testApp(t)
+	useTestNode(t, a)
+	archive := fixtureArchive(t)
+	if err := a.prepare(context.Background(), archive); err != nil {
+		t.Fatal(err)
+	}
+	requests := fixtureRegistry(t, "1.2.4")
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	if *requests != 1 || a.latestVersion != "1.2.4" || a.version != "1.2.3" || a.state.Archive != archive {
+		t.Fatal("update check must not install or reload")
+	}
+	if !a.snapshot()["pluginSetup"].(map[string]any)["updateAvailable"].(bool) {
+		t.Fatal("update not exposed")
+	}
+	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	if a.version != "1.2.4" || a.setupStatus != "ready" || a.peer != nil || a.state.Archive == archive {
+		t.Fatal("explicit update did not prepare the latest version")
+	}
+}
+
+func TestOfflineUpdateCheckKeepsPreparedRuntimeUsable(t *testing.T) {
+	a := testApp(t)
+	useTestNode(t, a)
+	archive := fixtureArchive(t)
+	if err := a.prepare(context.Background(), archive); err != nil {
+		t.Fatal(err)
+	}
+	prepared := a.prepared
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("offline fixture") })
+	t.Cleanup(func() { http.DefaultTransport = original })
+	if err := a.checkPluginUpdate(context.Background()); err == nil {
+		t.Fatal("expected offline check failure")
+	}
+	if a.prepared != prepared || a.state.Archive != archive || a.setupStatus != "ready" || a.errorText != "" || a.updateError == "" {
+		t.Fatal("offline update check broke the working runtime")
+	}
+	if err := a.updatePlugin(context.Background()); err == nil {
+		t.Fatal("expected offline update failure")
+	}
+	if a.prepared != prepared || a.state.Archive != archive || a.setupStatus != "ready" || a.stopping {
+		t.Fatal("failed replacement broke the working runtime")
 	}
 }
 

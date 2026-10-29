@@ -197,3 +197,15 @@ test('failed draft synchronization prevents destructive actions and is retried o
   assert.equal(h.calls.filter(call => call.url === '/api/new').length, 1);
   assert.deepEqual(h.calls.find(call => call.url === '/api/view-draft').body, { id: 'view', draft: true });
 });
+
+test('explicit plugin updates flush every view draft before replacing the host', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.views = [{ id: 'view', active: true, ready: true, revision: 1, url: 'http://127.0.0.1:23457/view/view/token/index.html' }];
+  await h.load();
+  h.composer(0, true);
+  await h.window.desktop.reloadPlugin();
+  const writes = h.calls.filter(call => call.url !== '/api/state');
+  assert.deepEqual(writes.slice(-2).map(call => [call.url, call.body]), [
+    ['/api/view-draft', { id: 'view', draft: true }], ['/api/update-plugin', {}],
+  ]);
+});

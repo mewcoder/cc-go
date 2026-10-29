@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -43,135 +42,76 @@ func Platform() string {
 	return osname + "-" + arch
 }
 
-var cliVersion = regexp.MustCompile(`^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\s+\(Claude Code\)\s*$`)
-
-func Detect(ctx context.Context, executable string, nodePath ...string) (string, error) {
-	home, _ := os.UserHomeDir()
-	candidates := []string{executable}
-	if executable == "" {
-		candidates = []string{"claude", filepath.Join(home, ".local", "bin", "claude")}
-		if runtime.GOOS == "windows" {
-			candidates = append(candidates, filepath.Join(home, ".local", "bin", "claude.exe"))
-			if directory := os.Getenv("APPDATA"); directory != "" {
-				candidates = append(candidates, filepath.Join(directory, "npm", "claude.cmd"))
-			}
-			if directory := os.Getenv("LOCALAPPDATA"); directory != "" {
-				candidates = append(candidates, filepath.Join(directory, "Microsoft", "WinGet", "Links", "claude.exe"))
-			}
-		}
-	}
-	for _, candidate := range candidates {
-		command, args := candidate, []string{"--version"}
-		if runtime.GOOS == "windows" {
-			if resolved, err := exec.LookPath(candidate); err == nil {
-				command = resolved
-			}
-			if strings.EqualFold(filepath.Ext(command), ".cmd") {
-				// npm's launcher is a batch file; invoke its JS entry without a shell.
-				script := filepath.Join(filepath.Dir(command), "node_modules", "@anthropic-ai", "claude-code", "cli.js")
-				command = "node.exe"
-				if len(nodePath) > 0 && nodePath[0] != "" {
-					command = nodePath[0]
-				}
-				args = []string{script, "--version"}
-			}
-		}
-		probe, cancel := context.WithTimeout(ctx, 8*time.Second)
-		cmd := exec.CommandContext(probe, command, args...)
-		configureProbe(cmd)
-		out, err := cmd.Output()
-		cancel()
-		if err == nil {
-			if m := cliVersion.FindStringSubmatch(strings.TrimSpace(string(out))); len(m) > 1 {
-				return m[1], nil
-			}
-		}
-	}
-	return "", errors.New("Claude Code not found; install it or pass --claude=/path/to/claude")
+type Downloaded struct {
+	Archive string
+	Version string
 }
 
-func Download(ctx context.Context, directory, version, platform string) (string, error) {
-	if !regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$`).MatchString(version) {
-		return "", errors.New("invalid Claude Code version")
-	}
+func Download(ctx context.Context, directory, version, platform string) (Downloaded, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
 	client := &http.Client{Timeout: 15 * time.Minute}
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://open-vsx.org/api/Anthropic/claude-code/"+url.PathEscape(platform)+"/"+url.PathEscape(version), nil)
-	res, err := client.Do(req)
+	meta, err := fetchRelease(ctx, client, version, platform)
 	if err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Open VSX metadata: %s", res.Status)
-	}
-	var meta struct {
-		Namespace, Name, Version, TargetPlatform string
-		Files                                    struct{ Download, SHA256 string }
-	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(&meta); err != nil {
-		return "", err
-	}
-	if meta.Namespace != "Anthropic" || meta.Name != "claude-code" || meta.Version != version || meta.TargetPlatform != platform {
-		return "", errors.New("Open VSX returned the wrong publisher, version or platform")
-	}
+	version = meta.Version
 	for _, raw := range []string{meta.Files.Download, meta.Files.SHA256} {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" {
-			return "", errors.New("Open VSX returned an invalid download URL")
+			return Downloaded{}, errors.New("Open VSX returned an invalid download URL")
 		}
 	}
 	hashReq, _ := http.NewRequestWithContext(ctx, "GET", meta.Files.SHA256, nil)
 	hashRes, err := client.Do(hashReq)
 	if err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
 	b, readErr := io.ReadAll(io.LimitReader(hashRes.Body, 4096))
 	hashRes.Body.Close()
 	if hashRes.StatusCode != 200 || readErr != nil {
-		return "", errors.New("could not read the Open VSX checksum")
+		return Downloaded{}, errors.New("could not read the Open VSX checksum")
 	}
 	fields := strings.Fields(string(b))
 	if len(fields) == 0 || !regexp.MustCompile(`^[a-fA-F0-9]{64}$`).MatchString(fields[0]) {
-		return "", errors.New("invalid Open VSX checksum")
+		return Downloaded{}, errors.New("invalid Open VSX checksum")
 	}
 	expected := strings.ToLower(fields[0])
 	filename := filepath.Join(directory, "claude-code-"+version+"-"+platform+".vsix")
 	if actual, err := fileHash(filename); err == nil && actual == expected {
-		return filename, nil
+		return Downloaded{Archive: filename, Version: version}, nil
 	}
 	dlReq, _ := http.NewRequestWithContext(ctx, "GET", meta.Files.Download, nil)
 	dlRes, err := client.Do(dlReq)
 	if err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
 	defer dlRes.Body.Close()
 	if dlRes.StatusCode != 200 {
-		return "", fmt.Errorf("VS Code extension (.vsix) download: %s", dlRes.Status)
+		return Downloaded{}, fmt.Errorf("VS Code extension (.vsix) download: %s", dlRes.Status)
 	}
 	f, err := os.CreateTemp(directory, ".download-*.part")
 	if err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
 	defer os.Remove(f.Name())
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(dlRes.Body, MaxArchive+1))
 	closeErr := f.Close()
 	if err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
 	if closeErr != nil {
-		return "", closeErr
+		return Downloaded{}, closeErr
 	}
 	if n > MaxArchive || hex.EncodeToString(h.Sum(nil)) != expected {
-		return "", errors.New("VS Code extension (.vsix) exceeds size limit or failed SHA-256 verification")
+		return Downloaded{}, errors.New("VS Code extension (.vsix) exceeds size limit or failed SHA-256 verification")
 	}
 	if err := os.Rename(f.Name(), filename); err != nil {
-		return "", err
+		return Downloaded{}, err
 	}
-	return filename, nil
+	return Downloaded{Archive: filename, Version: version}, nil
 }
 
 func fileHash(filename string) (string, error) {
@@ -409,7 +349,11 @@ func validate(root, platform, version string) (*Prepared, error) {
 	if manifest["publisher"] != "Anthropic" || manifest["name"] != "claude-code" {
 		return nil, errors.New("only the Anthropic Claude Code VS Code extension (.vsix) is supported")
 	}
-	if version != "" && manifest["version"] != version {
+	manifestVersion, _ := manifest["version"].(string)
+	if !versionPattern.MatchString(manifestVersion) {
+		return nil, errors.New("invalid extension version in manifest")
+	}
+	if version != "" && manifestVersion != version {
 		return nil, ErrVersionMismatch
 	}
 	main, ok := manifest["main"].(string)

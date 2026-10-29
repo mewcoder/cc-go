@@ -268,7 +268,7 @@ async function desktopFixture(platform = 'darwin') {
     addEventListener(name, callback) { handlers.set(name, callback); } };
   const context = {
     window, URL, document: { ...document, getElementById: () => null }, innerWidth: 1200, innerHeight: 800,
-    fetch: async () => ({ ok: true, text: async () => JSON.stringify(latest) }),
+    fetch: async url => ({ ok: true, text: async () => JSON.stringify(url === '/api/project' ? latest.project : latest) }),
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../web/desktop.js'), 'utf8'), context);
   await window.desktop.getState();
@@ -336,4 +336,22 @@ test('narrow windows and Windows titlebars preserve exact composer alignment', a
   assert.equal(h.frame.style.height, '670px');
   assert.equal(h.bar.hidden, false);
   assert.deepEqual(h.bar.style, { left: '16px', top: '676px', width: '358px' });
+});
+
+test('clicking change statistics refreshes Git without requiring an empty draft or a new chat', () => {
+  const document = documentFixture();
+  let refreshes = 0;
+  const bar = hud.create(document, { changes: () => refreshes++ });
+  bar.layout({ left: 0, top: 100, width: 600 });
+  bar.render(state({ canSelectProject: false, project: { changes: { files: 1, untracked: 0, added: 2, deleted: 1, binary: 0 } } }));
+  bar.setDraft(true);
+  const field = document.body.children[0].children[2];
+  assert.equal(field.attributes.role, 'button');
+  assert.equal(field.attributes['aria-haspopup'], undefined);
+  field.handlers.click();
+  field.handlers.keydown({ key: 'Enter', preventDefault() {} });
+  assert.equal(refreshes, 2);
+  bar.render(state({ phase: 'setup' }));
+  field.handlers.click();
+  assert.equal(refreshes, 2, 'hidden HUD must not refresh');
 });

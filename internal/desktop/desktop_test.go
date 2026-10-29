@@ -24,6 +24,10 @@ func TestWindowOptionsTrustOnlyShellAndPreservePlatformChrome(t *testing.T) {
 				if opts.TitleBarStyle != mygo.TitleBarHidden || opts.TrafficLightPosition == nil || *opts.TrafficLightPosition != (mygo.Point{X: 14, Y: 9}) {
 					t.Fatalf("unexpected macOS chrome: %+v", opts)
 				}
+			} else if platform == "windows" {
+				if opts.TitleBarStyle != mygo.TitleBarHidden || opts.TitleBarHeight != 30 || !opts.AutoHideMenuBar || opts.Frameless || opts.TrafficLightPosition != nil {
+					t.Fatalf("Windows must use one integrated titlebar with native controls and a hidden menu: %+v", opts)
+				}
 			} else if opts.TitleBarStyle != "" || opts.TrafficLightPosition != nil {
 				t.Fatal("macOS chrome leaked into another platform")
 			}

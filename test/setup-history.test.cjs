@@ -92,12 +92,14 @@ function setupHarness(phase = 'setup') {
   let failure, discovery, importing, onState;
   const state = {
     phase, pluginSetupOpen: phase === 'setup', setupCanStart: true,
-    pluginSetup: { nodeVersion: 'v22.0.0', cliVersion: '2.1.312', status: 'ready', step: 2 },
+    pluginSetup: { nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true, status: 'ready', step: 2 },
     workspaces: [{ path: '/projects/added' }],
   };
   const window = { desktop: {
     onState(callback) { onState = callback; },
     checkPlugin: async () => calls.push('check'),
+    checkPluginUpdates: async () => calls.push('check-update'),
+    reloadPlugin: async () => calls.push('update-plugin'),
     historyProjects: async () => { if (discovery) return discovery; if (failure) throw failure; return projects; },
     importProjects: async paths => {
       if (failure) throw failure;
@@ -177,8 +179,8 @@ test('detected prerequisites hide manual selection and import', () => {
   assert.equal(h.byID('setup-import').hidden, true);
 
   h.state.pluginSetup = {
-    nodeVersion: 'v22.0.0', cliVersion: '2.1.312',
-    status: 'error', step: 2, error: 'Invalid VSIX',
+    nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true,
+    status: 'error', step: 2, runtimeReady: false, error: 'Bundled runtime missing',
   };
   h.window.__goRenderSetup(h.state);
   assert.equal(h.byID('setup-select-cli').hidden, true);
@@ -186,10 +188,10 @@ test('detected prerequisites hide manual selection and import', () => {
 
   h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'error', step: 1, error: 'Claude Code not found' };
   h.window.__goRenderSetup(h.state);
-  assert.equal(h.byID('setup-select-cli').hidden, false);
+  assert.equal(h.byID('setup-select-cli').hidden, true);
   assert.equal(h.byID('setup-import').hidden, false);
 
-  h.state.pluginSetup = { nodeVersion: 'v22.0.0', cliVersion: '2.1.312', status: 'ready', step: 2 };
+  h.state.pluginSetup = { nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true, status: 'ready', step: 2 };
   h.window.__goRenderSetup(h.state);
   assert.equal(h.byID('setup-select-cli').hidden, true);
   assert.equal(h.byID('setup-import').hidden, true);
@@ -199,7 +201,8 @@ test('every setup step has independent title, status and action cells', () => {
   const h = setupHarness();
   const steps = h.byID('setup-steps').children;
   assert.equal(steps.length, 3);
-  assert.equal(steps[1].querySelector('h2').textContent, 'Claude Code CLI');
+  assert.equal(steps[1].querySelector('h2').textContent, 'VS Code 插件 (.vsix)');
+  assert.equal(steps[2].querySelector('h2').textContent, '内置 Claude');
   for (const step of steps) {
     const body = step.querySelector('.setup-card-body');
     const header = body.querySelector('.setup-card-header');
@@ -224,13 +227,13 @@ test('retry controls remain text buttons in the right-side actions, not version 
   for (const [index, step] of steps.entries()) {
     const actions = step.querySelector('.setup-actions');
     const button = actions.children.at(-1);
-    assert.equal(button.textContent, '重新检测');
+    assert.equal(button.textContent, index === 1 ? '检查更新' : '重新检测');
     assert.equal(button.children.length, 0);
     assert.ok(button.attributes['aria-label']);
     assert.equal(actions.hidden, false);
     if (index > 0) await button.onclick();
   }
-  assert.deepEqual(h.calls, ['check', 'check']);
+  assert.deepEqual(h.calls, ['check-update', 'check']);
   // Legacy retry text is normalized to the same label on subsequent shell renders.
   h.byID('setup-retry').textContent = 'Reload';
   h.render();

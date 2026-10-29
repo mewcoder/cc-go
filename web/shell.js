@@ -760,18 +760,10 @@
   ui.setupRetry.addEventListener('click', () => {
     void runCommand('plugin', () => state.pluginSetup?.status === 'ready' ? desktop.reloadPlugin() : desktop.checkPlugin());
   });
-  ui.setupSelectCli.addEventListener('click', () => { void runCommand('plugin', () => desktop.selectClaude()); });
   ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });
   ui.setupDirectory.addEventListener('click', () => { void runCommand('plugin-folder', () => desktop.openPluginDirectory()); });
   ui.setupBack.addEventListener('click', () => { void runCommand('plugin-panel', () => desktop.showPluginSetup(false)); });
   element('setup-open-download').addEventListener('click', () => { void runCommand('plugin-download', () => desktop.openPluginDownload()); });
-  element('setup-copy-install').addEventListener('click', () => {
-    void runCommand('copy-install', async () => {
-      await desktop.copyInstallCommand();
-      element('setup-copy-install').textContent = 'Copied';
-      setTimeout(() => { element('setup-copy-install').textContent = 'Copy'; }, 1600);
-    });
-  });
   ui.pluginUpdate.addEventListener('click', () => {
     void runCommand('plugin', () => state.pluginSetup?.status === 'ready'
       ? desktop.reloadPlugin() : desktop.showPluginSetup(true));

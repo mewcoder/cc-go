@@ -39,7 +39,9 @@ func (a *App) snapshot() map[string]any {
 	result := map[string]any{
 		"phase": a.phase, "label": a.label, "error": a.errorText,
 		"workspace": workspace, "theme": theme, "version": a.version,
-		"views": views, "logs": append([]string{}, a.logs...), "dataDir": a.cfg.DataDir,
+		"windowVisible": !a.windowHidden,
+		"nativeMenu":    a.native.ShowMenu != nil,
+		"views":         views, "logs": append([]string{}, a.logs...), "dataDir": a.cfg.DataDir,
 		"logsOpen": a.logsOpen, "settingsOpen": a.settingsOpen, "pluginSetupOpen": a.pluginSetupOpen,
 		"setupCanStart": a.prepared != nil && (a.setupStatus == "ready" || a.phase == "active"),
 		"sidebarWidth":  a.state.SidebarWidth, "sidebarCollapsed": a.state.SidebarCollapsed,
@@ -49,13 +51,14 @@ func (a *App) snapshot() map[string]any {
 		"sessionMetrics":   a.metrics[key],
 		"viewLoading":      a.phase == "active" && (activeView == nil || activeView.HTML == ""),
 		"extension":        map[string]any{"id": "Anthropic.claude-code", "version": a.version},
-		"pluginSetup":      map[string]any{"status": a.setupStatus, "step": a.setupStep, "nodeVersion": a.nodeVersion, "nodePath": a.nodePath, "nodeError": a.nodeError, "cliVersion": a.cliVersion, "platform": plugin.Platform(), "directory": filepath.Join(a.cfg.DataDir, "vsix"), "error": a.errorText},
+		"pluginSetup":      map[string]any{"status": a.setupStatus, "step": a.setupStep, "nodeVersion": a.nodeVersion, "nodePath": a.nodePath, "nodeError": a.nodeError, "runtimePath": a.runtimePath, "runtimeReady": a.runtimePath != "", "readyVersion": a.version, "latestVersion": a.latestVersion, "checkingUpdate": a.checkingUpdate, "updateAvailable": plugin.NewerVersion(a.latestVersion, a.version), "updateError": a.updateError, "platform": plugin.Platform(), "directory": filepath.Join(a.cfg.DataDir, "vsix"), "error": a.errorText},
 	}
 	if a.phase == "preparing" {
 		result["phase"] = "setup"
 	}
 	a.mu.Unlock()
-	result["project"] = a.project.get(workspace)
+	result["project"] = a.project.cached(workspace)
+	result["projectRevision"] = a.project.revision()
 
 	a.sessionMu.Lock()
 	workspaces := make([]map[string]any, 0, len(paths))
