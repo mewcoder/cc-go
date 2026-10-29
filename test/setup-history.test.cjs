@@ -364,7 +364,7 @@ test('after first setup the panel only shows plugin updates, not environment onb
   assert.equal(h.byID('plugin-setup').querySelector('.setup-product'), null);
   assert.equal(h.byID('setup-import').hidden, true);
   assert.equal(h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1).hidden, false);
-  assert.equal(h.byID('setup-start').textContent, 'Done');
+  assert.equal(h.byID('setup-start').textContent, 'Close');
 });
 
 test('updates use short check, available, latest and apply states without duplicate version prose', async () => {

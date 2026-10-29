@@ -256,7 +256,7 @@
     }
     canStart = Boolean(state.setupCanStart) && !view.busy;
     start.disabled = !canStart;
-    text(start, state.phase === 'active' ? 'Done' : state.phase === 'activating' ? 'Starting…' : state.setupComplete ? 'Apply' : 'Start');
+    text(start, state.phase === 'active' ? 'Close' : state.phase === 'activating' ? 'Starting…' : state.setupComplete ? 'Apply' : 'Start');
     return visible;
   }
 
