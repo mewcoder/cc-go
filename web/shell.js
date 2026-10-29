@@ -408,6 +408,7 @@
       entry.expanded = !collapsedWorkspaces.has(path);
       entry.folderIcon.replaceChildren(icon(entry.expanded ? 'folder-open' : 'folder'));
       entry.open.setAttribute('aria-expanded', String(entry.expanded));
+      entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);
     });
     const entry = { container, row, open, label, folderIcon, newSession, sessionList, expanded, sessions: new Map() };
     workspaceElements.set(path, entry);

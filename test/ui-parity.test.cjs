@@ -37,6 +37,7 @@ const approvedChanges = {
     ],
   ],
   'shell.js': [
+    ["      entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);\n", ''],
     ["    if (key === 'desktop.transcriptWidth') {\n      control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });\n    } else if (property.type === 'boolean') {", "    if (property.type === 'boolean') {"],
     ["  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });", "  ui.setupSelectCli.addEventListener('click', () => { void runCommand('plugin', () => desktop.selectClaude()); });\n  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });"],
     ["  ui.pluginUpdate.addEventListener('click', () => {", "  element('setup-copy-install').addEventListener('click', () => {\n    void runCommand('copy-install', async () => {\n      await desktop.copyInstallCommand();\n      element('setup-copy-install').textContent = 'Copied';\n      setTimeout(() => { element('setup-copy-install').textContent = 'Copy'; }, 1600);\n    });\n  });\n  ui.pluginUpdate.addEventListener('click', () => {"],
