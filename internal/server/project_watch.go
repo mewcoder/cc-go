@@ -23,7 +23,7 @@ type projectWatcher struct {
 	dirty    bool
 	err      error
 	metadata map[string]bool
-	observe  func(fsnotify.Event, bool, bool, bool)
+	observe  func(fsnotify.Event, bool, bool, bool) // Optional test diagnostics.
 }
 
 func newProjectWatcher(invalidate func()) (*projectWatcher, error) {
@@ -199,6 +199,11 @@ func (w *projectWatcher) sync(ctx context.Context, directory string) {
 			}
 		}
 	}
+	// Windows can emit directory timestamp events immediately during Add.
+	// Publish their classification before enabling any of the native watches.
+	w.mu.Lock()
+	w.metadata = dirs
+	w.mu.Unlock()
 	current := make(map[string]bool)
 	for _, dir := range w.fs.WatchList() {
 		current[dir] = true
@@ -224,7 +229,6 @@ func (w *projectWatcher) sync(ctx context.Context, directory string) {
 		}
 	}
 	w.mu.Lock()
-	w.metadata = dirs
 	if syncErr != nil {
 		w.err, w.dirty = syncErr, true
 	} else {
