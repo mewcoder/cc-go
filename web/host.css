@@ -210,9 +210,9 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 /* Keep the first row independent of expanding descriptions, progress and errors. */
 .setup-card-header { grid-column: 1; grid-row: 1; display: flex; align-items: center; min-width: 0; min-height: 30px; }
 .setup-card-header h2 { margin: 0; font-size: 13px; font-weight: 600; }
-.setup-plugin-link { color: inherit; text-decoration: underline; text-decoration-color: var(--setup-muted); text-underline-offset: 3px; }
-.setup-plugin-link:hover { color: var(--setup-accent); }
-.setup-plugin-link:focus-visible { outline: 1px solid var(--setup-accent); outline-offset: 3px; }
+.setup-plugin-link { display: grid; flex: 0 0 auto; place-items: center; width: 24px; height: 24px; margin-left: 4px; border-radius: 4px; color: var(--setup-muted); text-decoration: none; }
+.setup-plugin-link:hover { color: var(--vscode-foreground); background: var(--shell-hover-background); }
+.setup-plugin-link:focus-visible { outline: 1px solid var(--setup-accent); outline-offset: 1px; }
 .setup-card-details { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 24px; }
 .setup-card-version { min-width: 0; color: var(--setup-muted); font-size: 11px; overflow-wrap: anywhere; }
 .setup-card-status { display: flex; align-items: center; justify-content: flex-end; min-height: 30px; color: var(--setup-muted); font-size: 11px; font-weight: 400; white-space: nowrap; }

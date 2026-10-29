@@ -81,16 +81,27 @@
     const body = create('div', 'setup-card-body');
     const header = create('div', 'setup-card-header');
     const label = create('h2', '', title);
+    header.append(label);
     if (index === 1) {
-      const link = create('a', 'setup-plugin-link', title);
+      const link = create('a', 'setup-plugin-link');
       link.href = 'https://open-vsx.org/extension/Anthropic/claude-code';
-      link.title = 'Open VSX';
+      link.title = 'Open in Open VSX';
+      link.setAttribute('aria-label', link.title);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const attributes = {
+        viewBox: '0 0 24 24', width: '14', height: '14', fill: 'none', stroke: 'currentColor',
+        'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true',
+      };
+      for (const [name, value] of Object.entries(attributes)) svg.setAttribute(name, value);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M15 3h6v6 M10 14 21 3 M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5');
+      svg.append(path);
+      link.append(svg);
       link.onclick = event => {
         event.preventDefault();
         void window.desktop.openPluginDownload().catch(error => showActionError(error, 1));
       };
-      label.textContent = '';
-      label.append(link);
+      header.append(link);
     }
     const status = create('span', 'setup-card-status', index === 1 ? 'Pending' : 'Pending');
     status.setAttribute('role', 'status');
@@ -101,7 +112,6 @@
     const error = create('p', 'setup-step-error');
     error.setAttribute('role', 'alert');
     error.hidden = true;
-    header.append(label);
     details.append(version, hint);
     actions.append(status);
     body.append(header, details, actions, error);

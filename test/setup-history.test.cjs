@@ -213,7 +213,8 @@ test('every setup step has independent title, status and action cells', () => {
   const h = setupHarness();
   const steps = h.byID('setup-steps').children;
   assert.equal(steps.length, 2);
-  assert.equal(steps[1].querySelector('.setup-plugin-link').textContent, 'VSCode Plugin(.vsix)');
+  assert.equal(steps[1].querySelector('h2').textContent, 'VSCode Plugin(.vsix)');
+  assert.equal(steps[1].querySelector('h2').children.length, 0);
   assert.equal(steps[1].querySelector('.setup-card-description').textContent, '');
   assert.equal(steps[1].querySelector('.setup-card-description').hidden, true);
   for (const step of steps) {
@@ -224,7 +225,7 @@ test('every setup step has independent title, status and action cells', () => {
     assert.equal(header.parent, body);
     assert.equal(status.parent, actions);
     assert.equal(actions.parent, body);
-    assert.equal(header.children.length, 1);
+    assert.equal(header.children.length, step === steps[1] ? 2 : 1);
     assert.equal(header.children[0].tagName, 'h2');
   }
   for (const step of steps.slice(0, 3)) {
@@ -234,10 +235,15 @@ test('every setup step has independent title, status and action cells', () => {
   }
 });
 
-test('plugin title is a keyboard-accessible download link that opens Open VSX externally', async () => {
+test('plugin title stays plain text beside an accessible external-link icon', async () => {
   const h = setupHarness();
   const link = h.byID('setup-steps').children[1].querySelector('.setup-plugin-link');
   assert.equal(link.tagName, 'a');
+  assert.equal(link.textContent, '');
+  assert.equal(link.attributes['aria-label'], 'Open in Open VSX');
+  assert.equal(link.parent, h.byID('setup-steps').children[1].querySelector('.setup-card-header'));
+  assert.equal(link.querySelector('svg').attributes['aria-hidden'], 'true');
+  assert.ok(link.querySelector('svg').querySelector('path'));
   assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
   let prevented = false;
   link.onclick({ preventDefault() { prevented = true; } });
