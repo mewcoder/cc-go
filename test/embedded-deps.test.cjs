@@ -24,9 +24,9 @@ for (const name of ['picomatch', 'vscode-uri']) {
 }
 
 test('Windows distribution is a GUI executable, not a ZIP with adjacent JS modules', () => {
-  const script = fs.readFileSync(path.join(root, 'scripts/build.ps1'), 'utf8');
-  assert.ok(script.includes('release/$Name.exe'));
+  const script = fs.readFileSync(path.join(root, 'scripts/build.cjs'), 'utf8');
+  assert.ok(script.includes("name + '.exe'"));
   assert.ok(script.includes('-H=windowsgui'));
-  assert.ok(script.includes('Get-FileHash -Algorithm SHA256 $Executable'));
-  assert.doesNotMatch(script, /Compress-Archive|Copy-Item.*node_modules/);
+  assert.ok(script.includes("crypto.createHash('sha256')"));
+  assert.doesNotMatch(script, /Get-FileHash|shasum|sha256sum|Compress-Archive|Copy-Item.*node_modules/);
 });

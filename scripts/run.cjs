@@ -26,8 +26,7 @@ switch (command) {
     run(go, ['test', './...', ...args]);
     break;
   case 'build':
-    if (windows) run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts', 'build.ps1'), ...args]);
-    else run('/bin/sh', [path.join(root, 'scripts', 'build.sh'), ...args]);
+    run(process.execPath, [path.join(root, 'scripts', 'build.cjs'), ...args]);
     break;
   default:
     console.error('Usage: node scripts/run.cjs start|web|test|build [arguments]');

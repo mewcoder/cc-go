@@ -87,10 +87,16 @@ npm run build
 | Build host | Output under `release/` | Runtime not included |
 | --- | --- | --- |
 | macOS | `cc-go-VERSION-darwin-ARCH.zip`, containing `CC Go.app` | Node.js, Claude VS Code extension (.vsix) |
-| Windows | `cc-go-VERSION-windows-amd64.exe`, a single portable executable | Node.js, WebView2, Claude VS Code extension (.vsix) |
+| Windows | `cc-go-VERSION-windows-ARCH.exe`, a single portable executable | Node.js, WebView2, Claude VS Code extension (.vsix) |
 | Linux | `cc-go-VERSION-linux-ARCH.tar.gz`, containing a launcher, binary, icon and desktop entry | Node.js, GTK3/WebKitGTK, Claude VS Code extension (.vsix) |
 
-Every package has a SHA-256 sidecar. Windows embeds its application icon, GUI manifest and version metadata; macOS packages the `.icns` icon. Windows ARM64 can be built with `powershell -NoProfile -File scripts/build.ps1 -Arch arm64`.
+Packaging runs directly in Node.js via `scripts/build.cjs` on all three platforms; PowerShell is not part of the normal `npm run build` path. SHA-256 is streamed through Node's built-in `crypto`, with no `Get-FileHash`, `shasum` or `sha256sum` dependency. Linux gzip compression uses Node's built-in `zlib`, so `tar` does not need to find an external `gzip` command. The old `scripts/build.ps1` and `scripts/build.sh` paths remain thin compatibility entry points only. There is no need to pin or import Windows PowerShell modules.
+
+Before compiling, the builder checks Go 1.27.3+ and the required platform tools. macOS requires Apple's `/usr/bin/codesign` and `/usr/bin/ditto`; Linux requires `tar` on PATH. Missing tools fail early with actionable errors, before replacing output files. macOS ad-hoc signing and signature verification are mandatory; failures never produce a successful unsigned package. Windows icon/manifest generation uses pinned `go-winres` through Go (first use may need network access), not a separately installed resource tool.
+
+Every package has a SHA-256 sidecar containing a portable basename rather than a machine-specific absolute path. Executables, bundles and checksums are staged before publication; build/sign/archive/hash failures leave the previous release intact. Existing Windows resource files are restored after generation/build, including on failure. Windows embeds its application icon, GUI manifest and version metadata; macOS packages the `.icns` icon.
+
+The default architecture is the Node host's native architecture. Select ARM64 with `npm run build -- --arch arm64`. A Windows EXE can also be cross-built from macOS or Linux with `npm run build -- --platform windows --arch amd64`; this is not Windows GUI acceptance. macOS packages must be built on a Mac.
 
 On Windows, download and run the `.exe` directly; no ZIP extraction or adjacent `node_modules` directory is needed. The small host-side JavaScript dependencies are embedded in the executable and written alongside the host scripts under `~/.cc-go/runtime/` when starting the extension. This does not bundle or install Node.js, WebView2 or the Claude extension. The `.sha256` file is optional for integrity verification, not required to run.
 

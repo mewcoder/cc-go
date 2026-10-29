@@ -17,13 +17,13 @@ test('application, window and page titles use CC Go', () => {
 });
 
 test('platform packaging uses CC Go without changing compatibility identifiers', () => {
-  const mac = read('scripts/build.sh');
-  assert.match(mac, /APP="\$ROOT\/build\/CC Go\.app"/);
+  const mac = read('scripts/build.cjs');
+  assert.ok(mac.includes("path.join(work, 'CC Go.app')"));
   for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
     assert.ok(mac.includes(`<key>${key}</key><string>CC Go</string>`));
   }
   assert.ok(mac.includes('<key>CFBundleIdentifier</key><string>local.claude-vsix-go</string>'));
-  assert.match(read('scripts/build.ps1'), /--product-name 'CC Go'/);
+  assert.ok(mac.includes("'--product-name', 'CC Go'"));
   assert.match(read('assets/cc-go.desktop'), /^Name=CC Go$/m);
   assert.match(read('assets/cc-go.desktop'), /^Exec=cc-go$/m);
 });
@@ -39,19 +39,20 @@ test('package metadata and development entry point use cc-go', () => {
 });
 
 test('platform executable, launcher and archive names use cc-go', () => {
-  const macLinux = read('scripts/build.sh');
-  assert.ok(macLinux.includes('-o "$APP/Contents/MacOS/cc-go" ./cmd/cc-go'));
+  const macLinux = read('scripts/build.cjs');
+  assert.ok(macLinux.includes("path.join(contents, 'MacOS', 'cc-go')"));
   assert.ok(macLinux.includes('<key>CFBundleExecutable</key><string>cc-go</string>'));
-  assert.ok(macLinux.includes('release/cc-go-$VERSION-darwin-$ARCH.zip'));
-  assert.ok(macLinux.includes('PACKAGE="cc-go-$VERSION-linux-$ARCH"'));
+  assert.ok(macLinux.includes('`cc-go-${version}-${platform}-${arch}`'));
+  assert.ok(macLinux.includes("name + '.zip'"));
+  assert.ok(macLinux.includes("name + '.tar.gz'"));
   assert.ok(macLinux.includes('exec "$HERE/bin/cc-go" "$@"'));
-  assert.ok(macLinux.includes('cp assets/cc-go.desktop'));
+  assert.ok(macLinux.includes("path.join(root, 'assets', 'cc-go.desktop')"));
   assert.ok(macLinux.includes('apps/cc-go.png'));
-  const windows = read('scripts/build.ps1');
-  assert.ok(windows.includes('$Name = "cc-go-$Version-windows-$Arch"'));
-  assert.ok(windows.includes("--original-filename 'cc-go.exe'"));
-  assert.ok(windows.includes('$Executable = Join-Path $Root "release/$Name.exe"'));
-  assert.ok(windows.includes('-o $Executable ./cmd/cc-go'));
+  const windows = macLinux;
+  assert.ok(windows.includes("name + '.exe'"));
+  assert.ok(windows.includes("'--original-filename', 'cc-go.exe'"));
+  assert.ok(windows.includes("path.join(root, 'release', path.basename(artifact))"));
+  assert.ok(windows.includes("'-o', artifact, './cmd/cc-go'"));
   assert.doesNotMatch(windows, /Compress-Archive|Copy-Item.*node_modules/);
   assert.match(read('assets/cc-go.desktop'), /^Icon=cc-go$/m);
   assert.match(read('assets/cc-go.desktop'), /^StartupWMClass=cc-go$/m);
