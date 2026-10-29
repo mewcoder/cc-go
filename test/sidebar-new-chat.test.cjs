@@ -37,7 +37,7 @@ test('global new chat delegates automatic workspace choice and Cmd+N shares its 
 test('new chat aligns with project rows and keeps the workspace heading compact on every platform', () => {
   const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
   const shell = fs.readFileSync(path.join(__dirname, '../web/shell.css'), 'utf8');
-  const rule = css.match(/\.sidebar-new-chat \{([^}]+)\}/)[1];
+  const rule = css.match(/(?:^|\n)\.sidebar-new-chat \{([^}]+)\}/)[1];
   assert.match(shell, /\.workspace-list \{[^}]*padding: 0 6px 8px;/);
   assert.match(shell, /\.workspace-open \{[^}]*gap: 8px;[^}]*padding: 0 6px;/);
   assert.match(rule, /margin: 4px 6px 0;/);

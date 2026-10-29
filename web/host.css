@@ -3,6 +3,21 @@
 :root { --shell-archive-background: #1c1c1c; }
 body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 .archive-section { background: var(--shell-archive-background); }
+/* The shell and plugin are separate documents; keep sidebar text on the same theme tokens. */
+.sidebar { font-family: var(--vscode-chat-font-family, var(--vscode-font-family)); font-size: var(--vscode-chat-font-size, 13px); color: var(--vscode-foreground); }
+body[data-theme="light"] .sidebar { --vscode-foreground: #3b3b3b; --vscode-descriptionForeground: #6b6b76; }
+.sidebar :is(.workspace-open, .session-item, .session-rename) { font-size: inherit; }
+.sidebar .sidebar-new-chat { font-weight: 500; }
+.sidebar .session-item { min-height: 28px; }
+.sidebar .session-rename { height: 28px; }
+.sidebar .session-row.active .session-title { font-weight: 600; }
+body[data-theme] .sidebar :is(.workspace-open, .session-item, .archive-toggle),
+body[data-theme] .sidebar .session-item:hover:not(:disabled),
+body[data-theme] .sidebar .session-row.active .session-item { color: var(--vscode-foreground); }
+body[data-theme] .sidebar :is(.session-time, .session-empty, .session-load-more, .sidebar-header h2) { color: var(--vscode-descriptionForeground); }
+body[data-theme] .sidebar .session-row:is(.active, :hover, :focus-within) .session-time,
+body[data-theme] .sidebar .session-load-more:is(:hover, :focus-visible) { color: var(--vscode-foreground); }
+.sidebar :is(.session-time, .session-empty, .session-load-more) { font-size: 12px; font-weight: 400; }
 /* Keep all sidebar SVGs consistent without changing the plugin webview. */
 .window-toggle .icon,
 .sidebar .icon,
