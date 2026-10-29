@@ -188,6 +188,7 @@
     onState(callback) { stateListeners.add(callback); return () => stateListeners.delete(callback); },
     onAction(callback) { actionListeners.add(callback); return () => actionListeners.delete(callback); },
     checkPlugin: () => invoke('retry'),
+    cancelPluginDownload: () => invoke('cancel-download'),
     reloadPlugin: () => invoke('update-plugin'),
     checkPluginUpdates: () => invoke('update-check'),
     startUsing: () => invoke('start'),

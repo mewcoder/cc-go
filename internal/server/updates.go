@@ -47,12 +47,16 @@ func (a *App) updatePlugin(ctx context.Context) error {
 	previousPhase, previousStatus, previousLabel := a.phase, a.setupStatus, a.label
 	previousStep := a.setupStep
 	a.phase, a.stopping, a.pluginSetupOpen = "preparing", true, true
+	a.errorText = ""
 	a.mu.Unlock()
 	restore := func(err error) error {
 		a.mu.Lock()
 		a.phase, a.setupStatus, a.label, a.stopping = previousPhase, previousStatus, previousLabel, false
 		a.setupStep = previousStep
 		a.updateError = err.Error()
+		if errors.Is(err, errDownloadCancelled) {
+			a.setupStatus, a.updateError = "cancelled", ""
+		}
 		a.mu.Unlock()
 		return err
 	}
@@ -61,6 +65,9 @@ func (a *App) updatePlugin(ctx context.Context) error {
 		return restore(err)
 	}
 	archive := download.Archive
+	a.mu.Lock()
+	a.setupStatus, a.setupStep = "extracting", 1
+	a.mu.Unlock()
 	// Validate the replacement before stopping the current host or changing
 	// the saved archive. A failed download/import leaves the working copy intact.
 	prepared, err := plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), download.Version)

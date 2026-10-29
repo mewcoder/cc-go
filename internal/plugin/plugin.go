@@ -47,7 +47,42 @@ type Downloaded struct {
 	Version string
 }
 
-func Download(ctx context.Context, directory, version, platform string) (Downloaded, error) {
+type DownloadProgress struct {
+	Version        string  `json:"targetVersion"`
+	Received       int64   `json:"received"`
+	Total          int64   `json:"total"`
+	BytesPerSecond float64 `json:"bytesPerSecond"`
+	Verifying      bool    `json:"verifying"`
+}
+
+type progressWriter struct {
+	progress DownloadProgress
+	last     time.Time
+	rateAt   time.Time
+	rateFrom int64
+	report   func(DownloadProgress)
+}
+
+func (w *progressWriter) Write(b []byte) (int, error) {
+	w.progress.Received += int64(len(b))
+	now := time.Now()
+	if elapsed := now.Sub(w.rateAt).Seconds(); elapsed >= 0.5 {
+		rate := float64(w.progress.Received-w.rateFrom) / elapsed
+		if w.progress.BytesPerSecond == 0 {
+			w.progress.BytesPerSecond = rate
+		} else {
+			w.progress.BytesPerSecond = (w.progress.BytesPerSecond + rate) / 2
+		}
+		w.rateAt, w.rateFrom = now, w.progress.Received
+	}
+	if w.report != nil && now.Sub(w.last) >= 100*time.Millisecond {
+		w.report(w.progress)
+		w.last = now
+	}
+	return len(b), nil
+}
+
+func Download(ctx context.Context, directory, version, platform string, report func(DownloadProgress)) (Downloaded, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return Downloaded{}, err
 	}
@@ -57,6 +92,10 @@ func Download(ctx context.Context, directory, version, platform string) (Downloa
 		return Downloaded{}, err
 	}
 	version = meta.Version
+	progress := DownloadProgress{Version: version}
+	if report != nil {
+		report(progress)
+	}
 	for _, raw := range []string{meta.Files.Download, meta.Files.SHA256} {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme != "https" || u.Hostname() == "" {
@@ -79,8 +118,16 @@ func Download(ctx context.Context, directory, version, platform string) (Downloa
 	}
 	expected := strings.ToLower(fields[0])
 	filename := filepath.Join(directory, "claude-code-"+version+"-"+platform+".vsix")
+	if report != nil {
+		progress.Verifying = true
+		report(progress)
+	}
 	if actual, err := fileHash(filename); err == nil && actual == expected {
 		return Downloaded{Archive: filename, Version: version}, nil
+	}
+	progress.Verifying = false
+	if report != nil {
+		report(progress)
 	}
 	dlReq, _ := http.NewRequestWithContext(ctx, "GET", meta.Files.Download, nil)
 	dlRes, err := client.Do(dlReq)
@@ -91,14 +138,23 @@ func Download(ctx context.Context, directory, version, platform string) (Downloa
 	if dlRes.StatusCode != 200 {
 		return Downloaded{}, fmt.Errorf("VS Code extension (.vsix) download: %s", dlRes.Status)
 	}
+	progress.Total = max(0, dlRes.ContentLength)
+	if report != nil {
+		report(progress)
+	}
 	f, err := os.CreateTemp(directory, ".download-*.part")
 	if err != nil {
 		return Downloaded{}, err
 	}
 	defer os.Remove(f.Name())
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(dlRes.Body, MaxArchive+1))
+	writer := &progressWriter{progress: progress, report: report, rateAt: time.Now()}
+	n, err := io.Copy(io.MultiWriter(f, h, writer), io.LimitReader(dlRes.Body, MaxArchive+1))
 	closeErr := f.Close()
+	if report != nil {
+		writer.progress.Verifying = err == nil && closeErr == nil
+		report(writer.progress)
+	}
 	if err != nil {
 		return Downloaded{}, err
 	}

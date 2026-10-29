@@ -43,7 +43,8 @@ func (a *App) snapshot() map[string]any {
 		"nativeMenu":    a.native.ShowMenu != nil,
 		"views":         views, "logs": append([]string{}, a.logs...), "dataDir": a.cfg.DataDir,
 		"logsOpen": a.logsOpen, "settingsOpen": a.settingsOpen, "pluginSetupOpen": a.pluginSetupOpen,
-		"setupCanStart": a.prepared != nil && (a.setupStatus == "ready" || a.phase == "active"),
+		"setupCanStart": a.prepared != nil && (a.setupStatus == "ready" || a.setupStatus == "cancelled" || a.phase == "active"),
+		"setupComplete": a.state.SetupComplete,
 		"sidebarWidth":  a.state.SidebarWidth, "sidebarCollapsed": a.state.SidebarCollapsed,
 		"transcriptWidth":  a.state.TranscriptWidth,
 		"activeSessionId":  a.activeSessionID,
@@ -56,6 +57,16 @@ func (a *App) snapshot() map[string]any {
 	if a.phase == "preparing" {
 		result["phase"] = "setup"
 	}
+	setup := result["pluginSetup"].(map[string]any)
+	setup["targetVersion"] = a.download.Version
+	setup["received"] = a.download.Received
+	setup["total"] = a.download.Total
+	setup["verifying"] = a.download.Verifying
+	setup["bytesPerSecond"] = a.download.BytesPerSecond
+	if time.Since(a.downloadAt) > 2*time.Second {
+		setup["bytesPerSecond"] = float64(0)
+	}
+	setup["canCancel"] = a.downloadCancel != nil && a.setupStatus == "downloading"
 	a.mu.Unlock()
 	result["project"] = a.project.cached(workspace)
 	result["projectRevision"] = a.project.revision()

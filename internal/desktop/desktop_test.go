@@ -78,7 +78,7 @@ func TestDesktopMenusKeepActionsAndPlatformQuit(t *testing.T) {
 				t.Fatal("missing File action:", label)
 			}
 		}
-		for i, label := range []string{"Toggle Sidebar", "VSIX Output", "Initialization"} {
+		for i, label := range []string{"Toggle Sidebar", "VSIX Output", "Plugin Updates"} {
 			if view.Submenu[i].Label != label || view.Submenu[i].Click == nil {
 				t.Fatal("missing View action:", label)
 			}

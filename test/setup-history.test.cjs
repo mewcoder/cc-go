@@ -100,6 +100,7 @@ function setupHarness(phase = 'setup') {
     checkPlugin: async () => calls.push('check'),
     checkPluginUpdates: async () => calls.push('check-update'),
     reloadPlugin: async () => calls.push('update-plugin'),
+    cancelPluginDownload: async () => calls.push('cancel-download'),
     historyProjects: async () => { if (discovery) return discovery; if (failure) throw failure; return projects; },
     importProjects: async paths => {
       if (failure) throw failure;
@@ -144,7 +145,7 @@ test('setup introduction keeps product copy without a redundant subtitle', () =>
 
 test('history import moves to an accessible Workspace icon outside initialization', async () => {
   const h = setupHarness();
-  assert.equal(h.byID('setup-steps').children.length, 3);
+  assert.equal(h.byID('setup-steps').children.length, 2);
   assert.equal(h.byID('plugin-setup').querySelector('.history-dialog'), null);
   const opener = h.byID('import-history');
   assert.equal(opener.nextElementSibling.id, 'add-workspace');
@@ -173,10 +174,11 @@ test('environment card keeps system information visible after Node is ready', ()
   assert.equal(description.hidden, false);
 });
 
-test('detected prerequisites hide manual selection and import', () => {
+test('detected prerequisites hide Node retry but allow idle plugin import', () => {
   const h = setupHarness();
   assert.equal(h.byID('setup-select-cli').hidden, true);
-  assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(h.byID('setup-import').hidden, false);
+  assert.equal(h.byID('setup-retry').hidden, true);
 
   h.state.pluginSetup = {
     nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true,
@@ -194,22 +196,23 @@ test('detected prerequisites hide manual selection and import', () => {
   h.state.pluginSetup = { nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true, status: 'ready', step: 2 };
   h.window.__goRenderSetup(h.state);
   assert.equal(h.byID('setup-select-cli').hidden, true);
-  assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(h.byID('setup-import').hidden, false);
 });
 
 test('every setup step has independent title, status and action cells', () => {
   const h = setupHarness();
   const steps = h.byID('setup-steps').children;
-  assert.equal(steps.length, 3);
+  assert.equal(steps.length, 2);
   assert.equal(steps[1].querySelector('h2').textContent, 'VS Code 插件 (.vsix)');
-  assert.equal(steps[2].querySelector('h2').textContent, '内置 Claude');
+  assert.equal(steps[1].querySelector('.setup-card-description').textContent, '');
+  assert.equal(steps[1].querySelector('.setup-card-description').hidden, true);
   for (const step of steps) {
     const body = step.querySelector('.setup-card-body');
     const header = body.querySelector('.setup-card-header');
     const status = body.querySelector('.setup-card-status');
     const actions = body.querySelector('.setup-actions');
     assert.equal(header.parent, body);
-    assert.equal(status.parent, body);
+    assert.equal(status.parent, actions);
     assert.equal(actions.parent, body);
     assert.equal(header.children.length, 1);
     assert.equal(header.children[0].tagName, 'h2');
@@ -233,11 +236,106 @@ test('retry controls remain text buttons in the right-side actions, not version 
     assert.equal(actions.hidden, false);
     if (index > 0) await button.onclick();
   }
-  assert.deepEqual(h.calls, ['check-update', 'check']);
+  assert.deepEqual(h.calls, ['check-update']);
   // Legacy retry text is normalized to the same label on subsequent shell renders.
   h.byID('setup-retry').textContent = 'Reload';
   h.render();
   assert.equal(h.byID('setup-retry').textContent, '重新检测');
+  assert.equal(h.byID('setup-retry').hidden, true);
+});
+
+test('download progress and phases remain visible in the plugin card and clear after completion', () => {
+  const h = setupHarness();
+  const card = h.byID('setup-steps').children[1];
+  const progress = h.byID('setup-progress');
+  const status = card.querySelector('.setup-download-status');
+  h.state.setupCanStart = false;
+  h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'downloading', step: 1 };
+  h.render();
+  assert.equal(progress.parent, card.querySelector('.setup-card-body'));
+  assert.equal(progress.hidden, false);
+  assert.equal(status.hidden, true);
+  assert.equal(h.byID('setup-start').disabled, true);
+  const action = card.querySelector('.setup-actions').children.at(-1);
+  assert.equal(action.textContent, '获取版本…');
+  assert.equal(action.disabled, true);
+  Object.assign(h.state.pluginSetup, { targetVersion: '2.1.312', received: 5 << 20, total: 10 << 20 });
+  h.render();
+  assert.equal(progress.max, 10 << 20);
+  assert.equal(progress.value, 5 << 20);
+  assert.match(status.textContent, /50%/);
+  assert.equal(action.textContent, '下载中…');
+  h.state.pluginSetup.total = 0;
+  h.render();
+  assert.match(status.textContent, /已下载 5\.0 MB/);
+  for (const [setupStatus, expected] of [['extracting', '解压中…'], ['checking-runtime', '检查中…']]) {
+    h.state.pluginSetup.status = setupStatus;
+    h.render();
+    assert.equal(progress.hidden, true);
+    assert.equal(status.hidden, true);
+    assert.equal(action.textContent, expected);
+  }
+  Object.assign(h.state.pluginSetup, { status: 'ready', readyVersion: '2.1.312', runtimeReady: true });
+  h.state.setupCanStart = true;
+  h.render();
+  assert.equal(status.hidden, true);
+  assert.equal(progress.hidden, true);
+  assert.equal(h.byID('setup-start').disabled, false);
+});
+
+test('setup has no close button and Escape cannot dismiss prerequisites', () => {
+  const h = setupHarness();
+  const dialog = h.byID('plugin-setup').parent;
+  assert.equal(dialog.querySelector('.setup-close'), null);
+  assert.ok(dialog.querySelector('.setup-drag'));
+  let prevented = false;
+  dialog.handlers.cancel({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(dialog.open, true);
+});
+
+test('download can be cancelled and retried; import is only offered when idle', async () => {
+  const h = setupHarness();
+  const actions = h.byID('setup-steps').children[1].querySelector('.setup-actions');
+  const cancel = actions.children.at(-2);
+  const download = actions.children.at(-1);
+  h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'downloading', step: 1, canCancel: true };
+  h.render();
+  assert.equal(h.byID('setup-import').hidden, true);
+  assert.equal(cancel.hidden, false);
+  assert.equal(download.disabled, true);
+  await cancel.onclick();
+  assert.deepEqual(h.calls, ['cancel-download']);
+  Object.assign(h.state.pluginSetup, { status: 'cancelled', canCancel: false });
+  h.render();
+  assert.equal(cancel.hidden, true);
+  assert.equal(download.textContent, '重试下载');
+  assert.equal(download.disabled, false);
+  assert.equal(h.byID('setup-import').hidden, false);
+  await download.onclick();
+  assert.deepEqual(h.calls, ['cancel-download', 'update-plugin']);
+});
+
+test('after first setup the panel only shows plugin updates, not environment onboarding', () => {
+  const h = setupHarness('active');
+  h.state.pluginSetupOpen = true;
+  h.state.setupComplete = true;
+  h.render();
+  assert.equal(h.byID('setup-title').textContent, '插件更新');
+  assert.equal(h.byID('setup-steps').children[0].hidden, true);
+  assert.equal(h.byID('plugin-setup').querySelector('.setup-product').hidden, true);
+});
+
+test('plugin install can retry a failed first download without a separate runtime action', async () => {
+  const h = setupHarness();
+  h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'error', step: 1, error: 'Network unavailable' };
+  h.render();
+  const card = h.byID('setup-steps').children[1];
+  const action = card.querySelector('.setup-actions').children.at(-1);
+  assert.equal(action.textContent, '重试下载');
+  assert.equal(action.disabled, false);
+  await action.onclick();
+  assert.deepEqual(h.calls, ['update-plugin']);
 });
 
 test('CLI sessions import is compact and has no description or selection instructions', async () => {

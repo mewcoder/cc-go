@@ -114,7 +114,11 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	}
 	var result any = map[string]bool{"ok": true}
 	var err error
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	timeout := 2 * time.Minute
+	if r.URL.Path == "/api/retry" || r.URL.Path == "/api/update-plugin" {
+		timeout = 15 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	a.mu.Lock()
 	peer, native := a.peer, a.native
@@ -128,6 +132,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
+	case "/api/cancel-download":
+		a.cancelDownload()
 	case "/api/project":
 		result = a.projectInfo(ctx, args.Workspace, args.Force)
 	case "/api/view-draft":
@@ -152,7 +158,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		a.mu.Lock()
-		ready := a.prepared != nil && a.setupStatus == "ready"
+		ready := a.prepared != nil && (a.setupStatus == "ready" || a.setupStatus == "cancelled")
 		if a.phase == "active" && a.peer != nil {
 			a.pluginSetupOpen = false
 			a.settingsOpen = false
@@ -350,6 +356,9 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 		return
+	}
+	if errors.Is(err, errDownloadCancelled) {
+		result, err = map[string]bool{"cancelled": true}, nil
 	}
 	if err != nil {
 		w.WriteHeader(400)

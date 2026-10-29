@@ -49,7 +49,7 @@ test('only the sidebar plugin replacement entry uses the upgrade icon beside the
   const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
   assert.match(js, /ui\.pluginUpdate\.append\(icon\('upgrade'\)\)/);
   assert.match(js, /ui\.pluginUpdate\.hidden = phase !== 'active' \|\| !\['downloading', 'extracting', 'ready', 'error', 'reloading'\]\.includes\(status\)/);
-  assert.match(setup, /text\(card\.retry, '重新检测'\)/);
+  assert.match(setup, /text\(retry, .*'重新检测'\)/);
   assert.doesNotMatch(setup, /upgradeIcon|refreshIcon|setup-version-action/);
   assert.match(css, /\.sidebar-footer \{ justify-content: flex-start; gap: 6px; \}/);
   assert.match(css, /\.sidebar-footer > \.sidebar-actions \{ margin-left: auto; \}/);

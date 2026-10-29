@@ -162,7 +162,7 @@ func desktopMenu(window *mygo.Window, platform string) *mygo.Menu {
 	view := &mygo.MenuItem{Label: "View", Submenu: []*mygo.MenuItem{
 		action("Toggle Sidebar", "CmdOrCtrl+B", "window.__goDesktopAction?.('toggle-sidebar')"),
 		action("VSIX Output", "CmdOrCtrl+Shift+U", "document.getElementById('connection-status')?.click()"),
-		action("Initialization", "", "window.__goDesktopAction?.('open-setup')"),
+		action("Plugin Updates", "", "window.__goDesktopAction?.('open-setup')"),
 		action("Refresh Git", "CmdOrCtrl+Shift+R", "window.__goDesktopAction?.('refresh-git')"),
 	}}
 	return mygo.NewMenu([]*mygo.MenuItem{{Role: mygo.RoleAppMenu}, file, {Role: mygo.RoleEditMenu}, view})

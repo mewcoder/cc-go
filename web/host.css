@@ -127,7 +127,7 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 }
 
 /* Use the same surface, text, border and accent tokens as the VSIX webview. */
-body:is([data-initializing="true"], [data-phase="setup"], [data-phase="activating"]) #phase-message { display: none; }
+body:has(.setup-dialog[open]) #phase-message { display: none; }
 .setup-dialog {
   position: fixed;
   display: flex;
@@ -146,19 +146,8 @@ body:is([data-initializing="true"], [data-phase="setup"], [data-phase="activatin
 }
 .setup-dialog:not([open]) { display: none; }
 .setup-dialog::backdrop { background: var(--vscode-sideBar-background); }
-.setup-close {
-  position: absolute;
-  top: 38px;
-  right: 20px;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--vscode-descriptionForeground);
-  line-height: 0;
-}
-.setup-close svg { display: block; width: 16px; height: 16px; }
+.setup-drag { display: none; }
+:root:is([data-platform="darwin"], [data-platform="win32"]) .setup-drag { display: block; position: fixed; top: 0; left: var(--mygo-titlebar-inset-left, 0px); right: var(--mygo-titlebar-inset-right, 0px); height: var(--mygo-titlebar-height, 30px); --app-region: drag; -webkit-app-region: drag; user-select: none; }
 .setup-vertical {
   --setup-accent: #d97757;
   --setup-success: #78b587;
@@ -187,6 +176,7 @@ body:is([data-initializing="true"], [data-phase="setup"], [data-phase="activatin
   font-weight: 400;
 }
 .setup-vertical .setup-card:first-child::after { display: none; }
+.setup-vertical.setup-updates .setup-card { grid-template-columns: minmax(0, 1fr); }
 .setup-vertical .setup-step-number {
   flex-basis: 24px;
   width: 24px;
@@ -205,7 +195,7 @@ body:is([data-initializing="true"], [data-phase="setup"], [data-phase="activatin
 body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 .setup-card-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px 168px;
+  grid-template-columns: minmax(0, 1fr) 168px;
   align-content: start;
   align-items: start;
   gap: 6px 12px;
@@ -217,13 +207,13 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 .setup-card-header h2 { margin: 0; font-size: 13px; font-weight: 600; }
 .setup-card-details { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 24px; }
 .setup-card-version { min-width: 0; color: var(--setup-muted); font-size: 11px; overflow-wrap: anywhere; }
-.setup-card-status { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; min-height: 30px; color: var(--setup-muted); font-size: 11px; font-weight: 400; white-space: nowrap; }
+.setup-card-status { display: flex; align-items: center; justify-content: flex-end; min-height: 30px; color: var(--setup-muted); font-size: 11px; font-weight: 400; white-space: nowrap; }
 .setup-card[data-status="busy"] .setup-card-status { color: var(--setup-accent); }
 .setup-card[data-status="error"] .setup-card-status { color: var(--vscode-errorForeground); }
 .setup-card[data-status="ready"] .setup-card-status { color: var(--setup-success); }
 .setup-card-description { margin: 0; color: var(--setup-muted); font-size: 12px; font-weight: 400; }
 .setup-vertical .setup-actions { gap: 8px; margin: 12px 0 0; }
-.setup-vertical .setup-card-body > .setup-actions { grid-column: 3; grid-row: 1; align-self: start; justify-content: flex-end; margin: 0; }
+.setup-vertical .setup-card-body > .setup-actions { grid-column: 2; grid-row: 1; align-self: start; justify-content: flex-end; margin: 0; }
 .setup-vertical .setup-actions:empty { display: none; }
 .setup-vertical .setup-actions button {
   min-height: 30px;
@@ -242,10 +232,18 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 .setup-vertical .setup-command code { font-size: 10px; overflow-wrap: anywhere; }
 .setup-vertical .setup-offline p { margin: 6px 0; color: var(--setup-muted); font-size: 11px; }
 .setup-vertical .setup-offline { margin-top: 12px; padding: 0; border: 0; }
-.setup-card-body > :is(.setup-card-details, .setup-install, .setup-progress, .setup-offline, .setup-step-error) { grid-column: 1 / -1; min-width: 0; }
+.setup-card-body > :is(.setup-card-details, .setup-install, .setup-progress, .setup-download-status, .setup-update-status, .setup-offline, .setup-step-error) { grid-column: 1 / -1; min-width: 0; }
+.setup-download-status, .setup-update-status { margin: 6px 0 0; color: var(--setup-muted); font-size: 12px; overflow-wrap: anywhere; }
 .setup-vertical summary { color: var(--setup-muted); font-size: 11px; cursor: pointer; }
 .setup-vertical .setup-directory { font-size: 10px; }
-.setup-vertical .setup-progress { height: 4px; margin: 12px 0 0; accent-color: var(--setup-accent); }
+.setup-vertical .setup-progress { height: 4px; margin: 12px 0 0; appearance: none; border: 0; border-radius: 2px; overflow: hidden; background: var(--setup-line); color: var(--setup-accent); accent-color: var(--setup-accent); }
+.setup-progress::-webkit-progress-bar { background: var(--setup-line); }
+.setup-progress::-webkit-progress-value { background: var(--setup-accent); }
+.setup-progress::-moz-progress-bar { background: var(--setup-accent); }
+.setup-vertical .setup-progress:indeterminate { background: linear-gradient(90deg, var(--setup-line) 35%, var(--setup-accent) 50%, var(--setup-line) 65%); background-size: 200% 100%; animation: setup-download 1.6s linear infinite; }
+.setup-progress:indeterminate::-webkit-progress-bar { background: transparent; }
+@keyframes setup-download { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .setup-vertical .setup-progress:indeterminate { animation: none; } }
 .setup-step-error { max-height: 90px; margin: 6px 0 0; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--vscode-errorForeground); font-size: 11px; font-weight: 400; }
 .setup-footer { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
 .setup-vertical .setup-footer .setup-primary {
@@ -296,7 +294,6 @@ body[data-theme="light"] .history-error { color: #b64036; }
 .history-footer .history-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--shell-accent) 85%, var(--shell-background)); }
 @media (max-height: 620px) {
   .setup-dialog { padding: 42px 0 12px; }
-  .setup-close { top: 20px; right: 12px; }
   .setup-vertical .setup-heading h1 { font-size: 20px; }
   .setup-vertical .setup-card { padding-block: 8px; }
   .setup-vertical .setup-actions { margin-top: 8px; }

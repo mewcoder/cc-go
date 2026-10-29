@@ -188,6 +188,120 @@ func TestFirstSetupDownloadsLatestStableWithoutSystemCLI(t *testing.T) {
 	if a.version != "1.2.4" || a.runtimePath == "" || *requests != 3 {
 		t.Fatalf("wrong latest setup: version=%s requests=%d", a.version, *requests)
 	}
+	if a.setupStep != 1 {
+		t.Fatal("bundled runtime belongs to the second setup step")
+	}
+}
+
+func TestDownloadProgressIsExposedToTheSetupRendererAndResetForRetry(t *testing.T) {
+	a := testApp(t)
+	fixtureRegistry(t, "1.2.4")
+	if _, err := a.downloadVSIX(context.Background(), "latest"); err != nil {
+		t.Fatal(err)
+	}
+	setup := a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["targetVersion"] != "1.2.4" || setup["received"].(int64) <= 0 || setup["total"] != int64(0) || setup["verifying"] != true {
+		t.Fatalf("download progress missing from setup snapshot: %+v", setup)
+	}
+	if _, err := a.downloadVSIX(context.Background(), "latest"); err != nil {
+		t.Fatal(err)
+	}
+	setup = a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["received"] != int64(0) || setup["verifying"] != true {
+		t.Fatalf("cache verification retained stale transfer bytes: %+v", setup)
+	}
+}
+
+type stalledDownload struct {
+	io.ReadCloser
+	ctx     context.Context
+	started chan struct{}
+	read    bool
+}
+
+func (b *stalledDownload) Read(p []byte) (int, error) {
+	if !b.read {
+		b.read = true
+		return b.ReadCloser.Read(p[:min(16, len(p))])
+	}
+	close(b.started)
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func TestCancelDownloadCleansPartialFilesAndAllowsRetryWithoutLosingExistingPlugin(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "first-install", true: "update"}[existing], func(t *testing.T) {
+			a := testApp(t)
+			useTestNode(t, a)
+			if existing {
+				if err := a.prepare(context.Background(), fixtureArchive(t)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			prepared, savedArchive := a.prepared, a.state.Archive
+			fixtureRegistry(t, "1.2.4")
+			base := http.DefaultTransport
+			started := make(chan struct{})
+			http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				res, err := base.RoundTrip(r)
+				if err == nil && r.URL.Path == "/plugin.vsix" {
+					res.Body = &stalledDownload{ReadCloser: res.Body, ctx: r.Context(), started: started}
+				}
+				return res, err
+			})
+			endpoint := "/api/retry"
+			if existing {
+				endpoint = "/api/update-plugin"
+			}
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() { done <- postAPI(a, endpoint, map[string]any{}) }()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				a.cancelDownload()
+				t.Fatal("download did not start")
+			}
+			setup := a.snapshot()["pluginSetup"].(map[string]any)
+			if setup["canCancel"] != true || setup["received"] != int64(16) {
+				t.Fatalf("live download not observable/cancellable: %+v", setup)
+			}
+			if w := postAPI(a, "/api/cancel-download", map[string]any{}); w.Code != 200 {
+				t.Fatalf("cancel request failed: %s", w.Body.String())
+			}
+			select {
+			case w := <-done:
+				if w.Code != 200 || !strings.Contains(w.Body.String(), `"cancelled":true`) {
+					t.Fatalf("user cancellation treated as an error: %d %s", w.Code, w.Body.String())
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("cancel did not interrupt the transfer")
+			}
+			if a.setupStatus != "cancelled" || a.downloadCancel != nil || a.errorText != "" || a.updateError != "" || a.prepared != prepared || a.state.Archive != savedArchive {
+				t.Fatal("cancel retained stale state or replaced the working plugin")
+			}
+			if existing && a.snapshot()["setupCanStart"] != true {
+				t.Fatal("cancelling an update made the working plugin unusable")
+			}
+			if parts, _ := filepath.Glob(filepath.Join(a.cfg.DataDir, "vsix", ".download-*.part")); len(parts) != 0 {
+				t.Fatal("cancel left temporary downloads:", parts)
+			}
+			http.DefaultTransport = base
+			if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 200 || a.version != "1.2.4" || a.runtimePath == "" {
+				t.Fatalf("retry failed: %d %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestStalledTransferDoesNotKeepShowingAnOldSpeed(t *testing.T) {
+	a := testApp(t)
+	a.download.BytesPerSecond = 2 << 20
+	a.downloadAt = time.Now().Add(-3 * time.Second)
+	setup := a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["bytesPerSecond"] != float64(0) {
+		t.Fatal("stalled transfer retained an old speed")
+	}
 }
 
 func TestMissingRememberedArchiveDownloadsLatestButExplicitMissingArchiveFails(t *testing.T) {

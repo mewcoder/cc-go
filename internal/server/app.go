@@ -52,6 +52,7 @@ type DesktopState struct {
 	Archive          string                       `json:"archive,omitempty"`
 	Claude           string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
 	Node             string                       `json:"node,omitempty"`
+	SetupComplete    bool                         `json:"setupComplete,omitempty"`
 	SidebarWidth     int                          `json:"sidebarWidth"`
 	SidebarCollapsed bool                         `json:"sidebarCollapsed"`
 	TranscriptWidth  string                       `json:"transcriptWidth"`
@@ -99,6 +100,9 @@ type App struct {
 	windowHidden    bool
 	activeSessionID string
 	setupStatus     string
+	download        plugin.DownloadProgress
+	downloadAt      time.Time
+	downloadCancel  context.CancelCauseFunc
 	runtimePath     string
 	latestVersion   string
 	checkingUpdate  bool
@@ -167,6 +171,7 @@ func New(cfg Config) (*App, error) {
 	if a.state.Metadata == nil {
 		a.state.Metadata = make(map[string]sessions.Metadata)
 	}
+	a.pluginSetupOpen = !a.state.SetupComplete
 	if a.state.SidebarWidth < 180 || a.state.SidebarWidth > 420 {
 		a.state.SidebarWidth = 248
 	}
@@ -259,8 +264,21 @@ func (a *App) Start() error {
 			if a.ctx.Err() == nil {
 				a.fail(err)
 			}
-		} else if a.cfg.VSIX == "" {
-			go func() { _ = a.checkPluginUpdate(a.ctx) }()
+		} else {
+			a.mu.Lock()
+			completed := a.state.SetupComplete
+			a.mu.Unlock()
+			if completed {
+				if err := a.activateChosenWorkspace(a.ctx); err != nil {
+					if a.ctx.Err() == nil {
+						a.fail(err)
+					}
+					return
+				}
+			}
+			if a.cfg.VSIX == "" {
+				go func() { _ = a.checkPluginUpdate(a.ctx) }()
+			}
 		}
 	}()
 	return nil
@@ -354,15 +372,21 @@ func (a *App) failLocked(err error) {
 	if a.prepared == nil || a.setupStatus == "needs-node" {
 		a.phase = "setup"
 	}
+	if errors.Is(err, errDownloadCancelled) {
+		a.setupStatus, a.errorText = "cancelled", ""
+	}
 }
 
 func (a *App) prepare(ctx context.Context, archive string) error {
 	a.mu.Lock()
 	rememberedArchive := archive == "" && a.state.Archive != ""
 	a.phase, a.label, a.errorText = "preparing", "Checking Node.js", ""
-	a.pluginSetupOpen = true
+	if !a.state.SetupComplete {
+		a.pluginSetupOpen = true
+	}
 	a.prepared, a.version, a.runtimePath = nil, "", ""
 	a.setupStatus, a.setupStep, a.nodeError, a.nodeVersion, a.nodePath = "detecting-node", 0, "", "", ""
+	a.download = plugin.DownloadProgress{}
 	explicitNode := a.cfg.Node
 	if archive == "" {
 		archive = a.state.Archive
@@ -403,7 +427,7 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	}
 	a.mu.Lock()
 	a.version = fmt.Sprint(prepared.PackageJSON["version"])
-	a.setupStatus, a.setupStep, a.label = "checking-runtime", 2, "Checking bundled Claude runtime"
+	a.setupStatus, a.setupStep, a.label = "checking-runtime", 1, "Checking bundled Claude runtime"
 	a.mu.Unlock()
 	runtimePath, err := plugin.BundledRuntime(prepared.ExtensionPath, plugin.Platform())
 	if err != nil {
@@ -447,11 +471,40 @@ func (a *App) reloadPlugin(ctx context.Context, archive string) error {
 }
 
 func (a *App) downloadVSIX(ctx context.Context, version string) (plugin.Downloaded, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	a.mu.Lock()
 	a.label = "Downloading latest Claude Code VS Code extension (.vsix)"
 	a.setupStatus, a.setupStep = "downloading", 1
+	a.download = plugin.DownloadProgress{}
+	a.downloadCancel = cancel
+	a.downloadAt = time.Now()
 	a.mu.Unlock()
-	return plugin.Download(ctx, filepath.Join(a.cfg.DataDir, "vsix"), version, plugin.Platform())
+	result, err := plugin.Download(ctx, filepath.Join(a.cfg.DataDir, "vsix"), version, plugin.Platform(), func(progress plugin.DownloadProgress) {
+		a.mu.Lock()
+		a.download = progress
+		a.downloadAt = time.Now()
+		a.mu.Unlock()
+	})
+	a.mu.Lock()
+	cause := context.Cause(ctx)
+	a.downloadCancel = nil
+	a.mu.Unlock()
+	if cause != nil {
+		return plugin.Downloaded{}, cause
+	}
+	return result, err
+}
+
+var errDownloadCancelled = errors.New("plugin download cancelled")
+
+func (a *App) cancelDownload() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.downloadCancel != nil {
+		a.setupStatus = "cancelling"
+		a.downloadCancel(errDownloadCancelled)
+	}
 }
 
 func (a *App) runtimeScript() (string, error) {
@@ -530,6 +583,16 @@ func (a *App) activate(ctx context.Context) (err error) {
 	a.mu.Unlock()
 	a.Log("info", "Activated Claude Code "+a.version+" in "+workspace)
 	_, err = p.Call(deadline, "command", map[string]any{"command": "claude-vscode.editor.open"})
+	if err == nil {
+		a.mu.Lock()
+		if !a.state.SetupComplete {
+			a.state.SetupComplete = true
+			if err = a.saveLocked(); err != nil {
+				a.state.SetupComplete = false
+			}
+		}
+		a.mu.Unlock()
+	}
 	return err
 }
 

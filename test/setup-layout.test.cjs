@@ -14,12 +14,17 @@ test('setup content centers in the usable window and remains scrollable when exp
   assert.match(css, /@media \(max-height: 620px\) \{\s*\.setup-dialog \{ padding: 42px 0 12px; \}/);
 });
 
-test('setup steps share fixed number, status and right-side action columns', () => {
+test('setup steps share one right-side column for status or actions', () => {
   assert.match(css, /\.setup-vertical \.setup-card \{[^}]*grid-template-columns: 24px minmax\(0, 1fr\)/);
-  assert.match(css, /\.setup-card-body \{[^}]*grid-template-columns: minmax\(0, 1fr\) 56px 168px;/);
-  assert.match(css, /\.setup-card-status \{[^}]*grid-column: 2; grid-row: 1/);
-  assert.match(css, /\.setup-vertical \.setup-card-body > \.setup-actions \{ grid-column: 3; grid-row: 1; align-self: start; justify-content: flex-end;/);
+  assert.match(css, /\.setup-card-body \{[^}]*grid-template-columns: minmax\(0, 1fr\) 168px;/);
+  assert.doesNotMatch(css, /\.setup-card-status \{[^}]*grid-column/);
+  assert.match(css, /\.setup-vertical \.setup-card-body > \.setup-actions \{ grid-column: 2; grid-row: 1; align-self: start; justify-content: flex-end;/);
   assert.doesNotMatch(css, /grid-row: 1 \/ span 3/);
+});
+
+test('modal setup owns a draggable top strip without adding another close button', () => {
+  assert.match(css, /\.setup-drag \{[^}]*position: fixed;[^}]*top: 0;[^}]*--app-region: drag;[^}]*-webkit-app-region: drag/);
+  assert.doesNotMatch(css, /\.setup-close/);
 });
 
 test('expanding content spans the body without recentering the first row', () => {
@@ -30,6 +35,7 @@ test('expanding content spans the body without recentering the first row', () =>
 
 test('setup versions have no inline action icon styling', () => {
   assert.doesNotMatch(css, /setup-version-control|setup-version-action/);
+  assert.match(css, /\.setup-vertical\.setup-updates \.setup-card \{ grid-template-columns: minmax\(0, 1fr\); \}/);
 });
 
 test('narrow setup keeps actions right-aligned below details', () => {

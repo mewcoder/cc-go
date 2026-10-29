@@ -325,6 +325,9 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 	if phaseBeforeStart != "setup" || statusBeforeStart != "ready" || peerBeforeStart != nil || viewsBeforeStart != 0 {
 		t.Fatalf("setup must wait for Start: phase=%s status=%s peer=%v views=%d", phaseBeforeStart, statusBeforeStart, peerBeforeStart, viewsBeforeStart)
 	}
+	if persistedState(t, a).SetupComplete {
+		t.Fatal("preparing the plugin must not mark initial setup as completed")
+	}
 	if _, err := os.Stat(filepath.Join(a.cfg.DataDir, "runtime")); !os.IsNotExist(err) {
 		t.Fatal("setup must not launch or materialize the Node host before Start")
 	}
@@ -347,6 +350,9 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 	a.mu.Unlock()
 	if phase != "active" || view == nil {
 		t.Fatalf("activation failed: %s %s", phase, reason)
+	}
+	if !persistedState(t, a).SetupComplete {
+		t.Fatal("first successful activation did not persist setup completion")
 	}
 	base := a.ViewURL + "/view/" + view.ID + "/" + view.Token + "/"
 	request, _ := http.NewRequest("POST", base+"message", strings.NewReader(`{"type":"test","value":42}`))
@@ -406,7 +412,7 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 		t.Fatal("returning from setup must close it")
 	}
 
-	// A cached, already-prepared installation must also wait for Start next launch.
+	// Only the first successful launch needs explicit setup confirmation.
 	cfg := a.cfg
 	cfg.VSIX = ""
 	a.Close()
@@ -425,8 +431,8 @@ func TestRealNodeHostActivationAndMessageRoundTrip(t *testing.T) {
 	}
 	cached.mu.Lock()
 	defer cached.mu.Unlock()
-	if cached.phase != "setup" || cached.setupStatus != "ready" || cached.peer != nil || !cached.pluginSetupOpen {
-		t.Fatal("cached setup skipped the Start screen")
+	if cached.phase != "active" || cached.peer == nil || cached.pluginSetupOpen || !cached.state.SetupComplete {
+		t.Fatal("completed setup did not automatically enter the cached plugin")
 	}
 }
 

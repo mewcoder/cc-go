@@ -136,9 +136,9 @@ test('setup menu and explicit Start behavior are preserved', async () => {
   ]);
 });
 
-test('Initialization uses an English label without an ellipsis in the View menu', () => {
+test('Plugin Updates replaces repeat initialization in the View menu', () => {
   const native = fs.readFileSync(path.join(__dirname, '../internal/desktop/desktop.go'), 'utf8');
-  assert.match(native, /action\("Initialization", "", .*open-setup/);
+  assert.match(native, /action\("Plugin Updates", "", .*open-setup/);
   assert.match(native, /view := &mygo\.MenuItem\{Label: "View", Submenu:[\s\S]*?open-setup/);
 });
 
