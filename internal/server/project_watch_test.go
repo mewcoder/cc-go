@@ -7,7 +7,32 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
+
+func TestGitWatchFiltersLockAndMetadataDirectoryTimestampEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		op                fsnotify.Op
+		metadata, selfGit bool
+		ignore            bool
+	}{
+		{"index.lock", fsnotify.Create, true, false, true},
+		{"index.lock", fsnotify.Write, true, false, true},
+		{".git", fsnotify.Write, false, true, true},
+		{".git", fsnotify.Chmod, false, true, true},
+		{".git", fsnotify.Create, false, true, false},
+		{".git", fsnotify.Remove, false, true, false},
+		{"HEAD", fsnotify.Write, true, false, false},
+		{"index", fsnotify.Create, true, false, false},
+		{"src", fsnotify.Write, false, false, false},
+	} {
+		if got := ignoredGitWatchEvent(fsnotify.Event{Name: tc.name, Op: tc.op}, tc.metadata, tc.selfGit); got != tc.ignore {
+			t.Errorf("%s/%s: ignored=%v, want %v", tc.name, tc.op, got, tc.ignore)
+		}
+	}
+}
 
 func watchRepository(t *testing.T) (string, func(...string), func(string, string)) {
 	t.Helper()
@@ -138,8 +163,12 @@ func TestGitWatchDirectoryCoverageAndWorktreeMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	actual := strings.TrimSpace(strings.TrimPrefix(string(gitdir), "gitdir: "))
+	actual, err = filepath.EvalSymlinks(filepath.Clean(actual))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !has(actual) || !has(filepath.Join(root, ".git")) || !has(filepath.Join(root, ".git", "refs", "heads")) {
-		t.Fatal("worktree HEAD/index and common refs must both be watched")
+		t.Fatalf("worktree HEAD/index and common refs must both be watched: gitdir=%q watches=%q", actual, w.fs.WatchList())
 	}
 	if has(filepath.Join(root, "src")) {
 		t.Fatal("workspace switch retained the old worktree watcher")

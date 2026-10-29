@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -108,15 +109,19 @@ func TestProjectGitChanges(t *testing.T) {
 	write("initial.txt", "one\nreplaced\nthird\n")
 	git("add", "initial.txt")
 	write("initial.txt", "one\nreplaced\nthird\nfourth\n")
-	write("new\tname\n.txt", "untracked lines\ncounted too\n")
+	untrackedName, renamedName := "new\tname\n.txt", "renamed\tfile\n.txt"
+	if runtime.GOOS == "windows" {
+		untrackedName, renamedName = "new name.txt", "renamed file.txt"
+	}
+	write(untrackedName, "untracked lines\ncounted too\n")
 	write(".gitignore", "ignored.txt\n")
 	write("ignored.txt", "ignored\n")
 	check(GitChanges{Files: 3, Untracked: 2, Added: 6, Deleted: 1})
 	git("add", "initial.txt", ".gitignore")
 	git("-c", "user.name=HUD Test", "-c", "user.email=hud@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "updated")
-	git("mv", "initial.txt", "renamed\tfile\n.txt")
+	git("mv", "initial.txt", renamedName)
 	check(GitChanges{Files: 2, Untracked: 1, Added: 2})
-	write("renamed\tfile\n.txt", "one\nreplaced\nthird\nfourth\nfifth\n")
+	write(renamedName, "one\nreplaced\nthird\nfourth\nfifth\n")
 	check(GitChanges{Files: 2, Untracked: 1, Added: 3})
 	write("binary.dat", "\x00binary old")
 	git("add", "binary.dat")

@@ -73,9 +73,9 @@ func (w *projectWatcher) run(invalidate func()) {
 			}
 			w.mu.Lock()
 			metadata := w.metadata[filepath.Dir(event.Name)]
-			_, watchedDirectory := w.metadata[event.Name]
+			metadataDirectory, watchedDirectory := w.metadata[event.Name]
 			w.mu.Unlock()
-			if metadata && (strings.HasSuffix(event.Name, ".lock") || strings.HasPrefix(filepath.Base(event.Name), ".watchman-cookie-")) {
+			if ignoredGitWatchEvent(event, metadata, metadataDirectory) {
 				continue
 			}
 			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Remove) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Chmod) {
@@ -105,6 +105,15 @@ func (w *projectWatcher) run(invalidate func()) {
 			invalidate()
 		}
 	}
+}
+
+func ignoredGitWatchEvent(event fsnotify.Event, metadata, metadataDirectory bool) bool {
+	if metadata && (strings.HasSuffix(event.Name, ".lock") || strings.HasPrefix(filepath.Base(event.Name), ".watchman-cookie-")) {
+		return true
+	}
+	// Windows also reports the .git directory's own timestamp when a lock is
+	// created inside it. Actual child events carry the meaningful change.
+	return metadataDirectory && event.Op&(fsnotify.Create|fsnotify.Remove|fsnotify.Rename) == 0
 }
 
 func (w *projectWatcher) sync(ctx context.Context, directory string) {

@@ -40,6 +40,7 @@ func TestGlobalChatWorkspaceAutomaticallyResolvesWithoutPicker(t *testing.T) {
 	a := testApp(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	a.SetNative(Native{SelectFolder: func() (string, error) { t.Fatal("global chat opened a folder picker"); return "", nil }})
 	current, other := a.state.Workspace, t.TempDir()
 	missing := filepath.Join(t.TempDir(), "missing")
