@@ -213,7 +213,6 @@
     closeSettings: () => invoke('ui', { key: 'settings', open: false }),
     updateSetting: (key, value) => request('settings-update', { key, value }),
     setTranscriptWidth: value => invoke('ui', { key: 'transcript-width', value }),
-    setWorkspaceListCollapsed: collapsed => invoke('ui', { key: 'workspace-list', collapsed }),
     setTheme: theme => invoke('theme', { theme }),
     setSidebar: options => {
       if (options.width !== undefined) sidebarWidth = options.width;

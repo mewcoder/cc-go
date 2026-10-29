@@ -45,19 +45,18 @@ type Native struct {
 }
 
 type DesktopState struct {
-	Workspace              string                       `json:"workspace"`
-	Workspaces             []string                     `json:"workspaces"`
-	WorkspaceUsedAt        map[string]int64             `json:"workspaceUsedAt,omitempty"`
-	Theme                  string                       `json:"theme"`
-	Metadata               map[string]sessions.Metadata `json:"metadata"`
-	Archive                string                       `json:"archive,omitempty"`
-	Claude                 string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
-	Node                   string                       `json:"node,omitempty"`
-	SetupComplete          bool                         `json:"setupComplete,omitempty"`
-	SidebarWidth           int                          `json:"sidebarWidth"`
-	SidebarCollapsed       bool                         `json:"sidebarCollapsed"`
-	WorkspaceListCollapsed bool                         `json:"workspaceListCollapsed"`
-	TranscriptWidth        string                       `json:"transcriptWidth"`
+	Workspace        string                       `json:"workspace"`
+	Workspaces       []string                     `json:"workspaces"`
+	WorkspaceUsedAt  map[string]int64             `json:"workspaceUsedAt,omitempty"`
+	Theme            string                       `json:"theme"`
+	Metadata         map[string]sessions.Metadata `json:"metadata"`
+	Archive          string                       `json:"archive,omitempty"`
+	Claude           string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
+	Node             string                       `json:"node,omitempty"`
+	SetupComplete    bool                         `json:"setupComplete,omitempty"`
+	SidebarWidth     int                          `json:"sidebarWidth"`
+	SidebarCollapsed bool                         `json:"sidebarCollapsed"`
+	TranscriptWidth  string                       `json:"transcriptWidth"`
 }
 
 type LiveSession struct {

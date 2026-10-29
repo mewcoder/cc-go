@@ -56,45 +56,15 @@ test('workspace restores its saved collapsed icon and expands on click', () => {
   assert.match(source, /localStorage\.setItem\('collapsedWorkspaces', JSON\.stringify\(\[\.\.\.collapsedWorkspaces\]\)\)/);
 });
 
-test('only the overall Workspace heading has a disclosure arrow', () => {
-  const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
-  assert.match(css, /#toggle-workspaces::after \{[^}]*rotate\(-45deg\)/);
-  assert.match(css, /#toggle-workspaces\[aria-expanded="true"\]::after \{[^}]*rotate\(45deg\)/);
-  assert.doesNotMatch(css, /\.workspace-open::after/);
-  assert.match(css, /\.workspace-list\[hidden\] \+ \.archive-section \{ margin-top: auto;/);
-});
-
-test('overall Workspace toggle changes only the saved section preference', () => {
-  let click, saved;
-  const state = { workspaceListCollapsed: false };
-  const start = source.indexOf("  ui.toggleWorkspaces.addEventListener('click'");
-  const end = source.indexOf("  ui.addWorkspace.addEventListener", start);
-  vm.runInNewContext(source.slice(start, end), {
-    ui: { toggleWorkspaces: { addEventListener(type, fn) { click = fn; } } }, state,
-    desktop: { setWorkspaceListCollapsed(value) { saved = value; } },
-    runCommand(key, fn) { assert.equal(key, 'workspace-list'); return fn(); },
-  });
-  click();
-  assert.equal(saved, true);
-  state.workspaceListCollapsed = true;
-  click();
-  assert.equal(saved, false);
+test('overall Workspace stays a static heading and does not hide the list', () => {
   const html = fs.readFileSync(path.join(__dirname, '../web/shell.html'), 'utf8');
-  assert.match(html, /id="toggle-workspaces"[^>]*type="button"[^>]*aria-controls="workspace-list"/);
-});
-
-test('overall collapse hides only the list and preserves individual project state', () => {
-  const start = source.indexOf('    const listCollapsed = Boolean(state.workspaceListCollapsed);');
-  const end = source.indexOf('    const items = ', start);
-  const state = { workspaceListCollapsed: true };
-  const attributes = {};
-  const ui = { workspaceList: {}, toggleWorkspaces: { setAttribute(key, value) { attributes[key] = value; } } };
-  const apply = () => vm.runInNewContext(source.slice(start, end), { state, ui, desktop: {}, pending: new Set() });
-  apply();
-  assert.equal(ui.workspaceList.hidden, true);
-  assert.equal(attributes['aria-expanded'], 'false');
-  state.workspaceListCollapsed = false;
-  apply();
-  assert.equal(ui.workspaceList.hidden, false);
-  assert.equal(attributes['aria-expanded'], 'true');
+  const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
+  const bridge = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8');
+  assert.match(html, /<h2>Workspace<\/h2>/);
+  assert.doesNotMatch(html, /id="workspace-list"[^>]*hidden/);
+  assert.doesNotMatch(source, /toggleWorkspaces|workspaceListCollapsed|workspaceList\.hidden/);
+  assert.doesNotMatch(bridge, /setWorkspaceListCollapsed/);
+  assert.doesNotMatch(css, /toggle-workspaces|\.workspace-open::after/);
+  assert.match(css, /sidebar-header \{ flex-basis: 36px;/);
+  assert.match(css, /sidebar-header h2 \{ font-size: 11px;/);
 });

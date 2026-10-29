@@ -29,7 +29,6 @@
     setupOffline: document.querySelector('.setup-offline'),
     setupDirectory: element('setup-open-directory'),
     workspaceList: element('workspace-list'),
-    toggleWorkspaces: element('toggle-workspaces'),
     addWorkspace: element('add-workspace'),
     newChat: element('new-chat'),
     toggleArchive: element('toggle-archive'),
@@ -576,10 +575,6 @@
   }
 
   function renderWorkspaces(phase) {
-    const listCollapsed = Boolean(state.workspaceListCollapsed);
-    ui.workspaceList.hidden = listCollapsed;
-    ui.toggleWorkspaces.setAttribute('aria-expanded', String(!listCollapsed));
-    ui.toggleWorkspaces.disabled = !desktop || pending.has('workspace-list');
     const items = Array.isArray(state.workspaces) ? state.workspaces : [];
     const paths = new Set(items.map((item) => item.path));
     for (const [path, entry] of workspaceElements) {
@@ -759,9 +754,6 @@
     render();
   }
 
-  ui.toggleWorkspaces.addEventListener('click', () => {
-    void runCommand('workspace-list', () => desktop.setWorkspaceListCollapsed(!state.workspaceListCollapsed));
-  });
   ui.addWorkspace.addEventListener('click', () => {
     void runCommand('add-workspace', () => desktop.addWorkspace());
   });

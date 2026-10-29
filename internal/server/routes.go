@@ -196,14 +196,6 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 					a.settingsOpen = false
 				}
 			}
-		case "workspace-list":
-			if args.Collapsed != nil {
-				previous := a.state.WorkspaceListCollapsed
-				a.state.WorkspaceListCollapsed = *args.Collapsed
-				if err = a.saveLocked(); err != nil {
-					a.state.WorkspaceListCollapsed = previous
-				}
-			}
 		case "sidebar":
 			if args.Width != nil {
 				a.state.SidebarWidth = min(420, max(180, *args.Width))

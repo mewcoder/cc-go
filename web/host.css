@@ -14,10 +14,6 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 #add-workspace { display: grid; place-items: center; }
 #import-history { display: grid; place-items: center; }
 .workspace-new { opacity: 1; }
-#toggle-workspaces { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 26px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; }
-#toggle-workspaces::after { content: ''; flex: 0 0 auto; width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); opacity: 0.6; }
-#toggle-workspaces[aria-expanded="true"]::after { transform: translateY(-2px) rotate(45deg); }
-.workspace-list[hidden] + .archive-section { margin-top: auto; }
 /* Include the project buttons' 1px border in the shared content inset. */
 .sidebar-new-chat { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 28px; margin: 4px 6px 0; padding: 0 6px; border: 1px solid var(--shell-border); border-radius: 6px; color: inherit; text-align: left; }
 :root .sidebar-header { flex-basis: 36px; padding-left: 13px; }
