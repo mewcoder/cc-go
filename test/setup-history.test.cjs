@@ -174,10 +174,10 @@ test('environment card keeps system information visible after Node is ready', ()
   assert.equal(description.hidden, false);
 });
 
-test('detected prerequisites hide Node retry but allow idle plugin import', () => {
+test('ready plugins hide import while missing or invalid plugins allow manual recovery', () => {
   const h = setupHarness();
   assert.equal(h.byID('setup-select-cli').hidden, true);
-  assert.equal(h.byID('setup-import').hidden, false);
+  assert.equal(h.byID('setup-import').hidden, true);
   assert.equal(h.byID('setup-retry').hidden, true);
 
   h.state.pluginSetup = {
@@ -196,7 +196,12 @@ test('detected prerequisites hide Node retry but allow idle plugin import', () =
   h.state.pluginSetup = { nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true, status: 'ready', step: 2 };
   h.window.__goRenderSetup(h.state);
   assert.equal(h.byID('setup-select-cli').hidden, true);
-  assert.equal(h.byID('setup-import').hidden, false);
+  assert.equal(h.byID('setup-import').hidden, true);
+  for (const status of ['idle', 'cancelled']) {
+    h.state.pluginSetup.status = status;
+    h.render();
+    assert.equal(h.byID('setup-import').hidden, true);
+  }
 });
 
 test('every setup step has independent title, status and action cells', () => {
@@ -281,6 +286,7 @@ test('download progress and phases remain visible in the plugin card and clear a
   assert.equal(status.hidden, true);
   assert.equal(progress.hidden, true);
   assert.equal(h.byID('setup-start').disabled, false);
+  assert.equal(h.byID('setup-import').hidden, true);
 });
 
 test('setup has no close button and Escape cannot dismiss prerequisites', () => {
@@ -324,6 +330,7 @@ test('after first setup the panel only shows plugin updates, not environment onb
   assert.equal(h.byID('setup-title').textContent, '插件更新');
   assert.equal(h.byID('setup-steps').children[0].hidden, true);
   assert.equal(h.byID('plugin-setup').querySelector('.setup-product').hidden, true);
+  assert.equal(h.byID('setup-import').hidden, true);
 });
 
 test('plugin install can retry a failed first download without a separate runtime action', async () => {

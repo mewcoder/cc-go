@@ -213,7 +213,7 @@
     $('setup-open-download').title = '下载 VS Code 插件 (.vsix)';
     text($('setup-import'), '导入插件');
     $('setup-import').title = '导入 VS Code 插件 (.vsix)';
-    $('setup-import').hidden = view.busy || !view.nodeReady;
+    $('setup-import').hidden = view.busy || !view.nodeReady || view.pluginReady && view.runtimeReady;
     $('setup-progress').setAttribute('aria-label', '插件下载进度');
     const progress = $('setup-progress');
     progress.hidden = setup.status !== 'downloading';
