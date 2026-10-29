@@ -47,7 +47,7 @@ func (a *App) Handler() http.Handler {
 				platform = "win32"
 			}
 			a.mu.Lock()
-			config := map[string]any{"token": a.token, "platform": platform, "native": a.native.SelectFolder != nil}
+			config := map[string]any{"token": a.token, "platform": platform, "native": a.native.SelectFolder != nil, "nativeExternalLinks": a.native.OpenURL != nil}
 			a.mu.Unlock()
 			b, _ := json.Marshal(config)
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
@@ -119,6 +119,9 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
+	// Shutdown must cancel network operations before Close waits for their locks.
+	stopCloseCancellation := context.AfterFunc(a.ctx, cancel)
+	defer stopCloseCancellation()
 	a.mu.Lock()
 	peer, native := a.peer, a.native
 	selecting := a.selecting

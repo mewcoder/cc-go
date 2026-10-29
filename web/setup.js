@@ -69,6 +69,7 @@
   dialog.append(drag, root);
   const heading = root.querySelector('.setup-heading');
   const steps = $('setup-steps');
+  const actionErrors = ['', ''];
   steps.setAttribute('aria-label', 'Setup steps');
   steps.replaceChildren();
   const cards = [
@@ -86,6 +87,8 @@
       const link = create('a', 'setup-plugin-link');
       link.href = 'https://open-vsx.org/extension/Anthropic/claude-code';
       link.title = 'Open in Open VSX';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
       link.setAttribute('aria-label', link.title);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       const attributes = {
@@ -98,12 +101,14 @@
       svg.append(path);
       link.append(svg);
       link.onclick = event => {
+        if (!window.desktop.nativeExternalLinks) return;
         event.preventDefault();
+        actionErrors[1] = '';
         void window.desktop.openPluginDownload().catch(error => showActionError(error, 1));
       };
       header.append(link);
     }
-    const status = create('span', 'setup-card-status', index === 1 ? 'Pending' : 'Pending');
+    const status = create('span', 'setup-card-status', 'Pending');
     status.setAttribute('role', 'status');
     const version = create('span', 'setup-card-version');
     const details = create('div', 'setup-card-details');
@@ -138,11 +143,13 @@
   cards[1].body.append(progressStatus);
   const update = create('button', '', 'Check for Updates');
   update.type = 'button';
-  let updateAvailable = false, installLatest = false;
+  let updateAvailable = false, installLatest = false, needsRecovery = false;
   update.onclick = async () => {
     update.disabled = true;
+    actionErrors[1] = '';
     try {
-      if (installLatest) await window.desktop.reloadPlugin();
+      if (needsRecovery) await window.desktop.checkPlugin();
+      else if (installLatest) await window.desktop.reloadPlugin();
       else await window.desktop.checkPluginUpdates();
     } catch (error) { showActionError(error, 1); }
     finally { update.disabled = false; }
@@ -154,6 +161,7 @@
   cancel.onclick = async () => {
     if (cancel.disabled) return;
     cancel.disabled = true;
+    actionErrors[1] = '';
     try { await window.desktop.cancelPluginDownload(); }
     catch (error) { showActionError(error, 1); }
     finally { cancel.disabled = false; }
@@ -170,6 +178,7 @@
   start.disabled = true;
   start.onclick = async () => {
     start.disabled = true;
+    actionErrors[1] = '';
     try { await window.desktop.startUsing(); } catch (error) {
       showActionError(error);
     } finally { start.disabled = !canStart; }
@@ -186,15 +195,18 @@
   root.replaceChildren(heading, steps, footer, legacy);
 
   function showActionError(error, index = 1) {
-    text(cards[index].error, String(error?.message || error));
+    actionErrors[index] = String(error?.message || error);
+    text(cards[index].error, actionErrors[index]);
     cards[index].error.hidden = false;
   }
 
   function render(state) {
     const setup = state.pluginSetup || {};
     const view = setupView(state);
-    const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy;
+    needsRecovery = state.phase === 'error' || setup.status === 'error' || setup.status === 'cancelled';
+    const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy && !needsRecovery;
     const visible = Boolean(state.pluginSetupOpen);
+    if (!visible || view.busy) actionErrors.fill('');
     root.hidden = !visible;
     if (visible && !dialog.open) dialog.showModal();
     else if (!visible && dialog.open) dialog.close();
@@ -220,8 +232,9 @@
       card.hint.hidden = !card.hint.textContent || index !== 0 && current.kind === 'ready';
       card.details.hidden = card.version.hidden && card.hint.hidden;
       card.status.hidden = index === 0 ? !view.nodeReady : !initialReady;
-      text(card.error, current.error || '');
-      card.error.hidden = !current.error;
+      const error = current.error || actionErrors[index];
+      text(card.error, error);
+      card.error.hidden = !error;
     });
     cards[0].version.title = setup.nodePath || '';
     retry.hidden = view.nodeReady;
@@ -243,12 +256,12 @@
     $('setup-retry').disabled = view.busy;
     $('setup-import').disabled = view.busy || !view.nodeReady;
     updateAvailable = Boolean(setup.updateAvailable);
-    installLatest = updateAvailable || !view.runtimeReady || setup.status === 'cancelled';
-    text(update, setup.checkingUpdate ? 'Checking for Updates…' : setup.status === 'cancelled' || setup.status === 'error' && !view.runtimeReady ? 'Retry' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
+    installLatest = updateAvailable || !view.runtimeReady;
+    text(update, needsRecovery ? 'Retry' : setup.checkingUpdate ? 'Checking for Updates…' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
     if (view.busy) text(update, view.busyLabel);
     update.hidden = !view.nodeReady || initialReady;
     update.setAttribute('aria-label', update.textContent);
-    update.disabled = view.busy || setup.checkingUpdate || !view.nodeReady;
+    update.disabled = view.busy || (!needsRecovery && setup.checkingUpdate) || !view.nodeReady;
     cancel.hidden = !setup.canCancel;
     cancel.disabled = setup.status === 'cancelling';
     text(updateStatus, setup.updateError ? `Failed: ${setup.updateError}`

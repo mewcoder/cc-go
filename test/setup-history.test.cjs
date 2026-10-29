@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function setupHarness(phase = 'setup') {
+function setupHarness(phase = 'setup', nativeExternalLinks = true) {
   const elements = [];
   let focused;
   class Element {
@@ -96,6 +96,7 @@ function setupHarness(phase = 'setup') {
     workspaces: [{ path: '/projects/added' }],
   };
   const window = { desktop: {
+    nativeExternalLinks,
     onState(callback) { onState = callback; },
     checkPlugin: async () => calls.push('check'),
     checkPluginUpdates: async () => calls.push('check-update'),
@@ -245,10 +246,36 @@ test('plugin title stays plain text beside an accessible external-link icon', as
   assert.equal(link.querySelector('svg').attributes['aria-hidden'], 'true');
   assert.ok(link.querySelector('svg').querySelector('path'));
   assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
+  assert.equal(link.target, '_blank');
+  assert.equal(link.rel, 'noopener noreferrer');
   let prevented = false;
   link.onclick({ preventDefault() { prevented = true; } });
   assert.equal(prevented, true);
   assert.deepEqual(h.calls, ['open-download']);
+});
+
+test('browser preview follows the external link without invoking a missing native bridge', () => {
+  const h = setupHarness('setup', false);
+  const link = h.byID('setup-steps').children[1].querySelector('.setup-plugin-link');
+  let prevented = false;
+  link.onclick({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, false);
+  assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
+  assert.deepEqual(h.calls, []);
+});
+
+test('native link failures survive state polling until a new operation starts', async () => {
+  const h = setupHarness();
+  h.window.desktop.openPluginDownload = async () => { throw new Error('Unable to open browser'); };
+  const card = h.byID('setup-steps').children[1];
+  card.querySelector('.setup-plugin-link').onclick({ preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  h.render();
+  assert.equal(card.querySelector('.setup-step-error').textContent, 'Unable to open browser');
+  assert.equal(card.querySelector('.setup-step-error').hidden, false);
+  h.state.pluginSetup.status = 'downloading';
+  h.render();
+  assert.equal(card.querySelector('.setup-step-error').hidden, true);
 });
 
 test('retry controls remain text buttons in the right-side actions, not version icons', async () => {
@@ -357,7 +384,7 @@ test('download can be cancelled and retried; import is only offered when idle', 
   assert.equal(download.disabled, false);
   assert.equal(h.byID('setup-import').hidden, false);
   await download.onclick();
-  assert.deepEqual(h.calls, ['cancel-download', 'update-plugin']);
+  assert.deepEqual(h.calls, ['cancel-download', 'check']);
 });
 
 test('after first setup the panel only shows plugin updates, not environment onboarding', () => {
@@ -426,7 +453,33 @@ test('plugin install can retry a failed first download without a separate runtim
   assert.equal(action.textContent, 'Retry');
   assert.equal(action.disabled, false);
   await action.onclick();
-  assert.deepEqual(h.calls, ['update-plugin']);
+  assert.deepEqual(h.calls, ['check']);
+});
+
+test('failed activation and final prepare saves keep an offline-capable Retry visible', async () => {
+  for (const setupComplete of [false, true]) {
+    const h = setupHarness('error');
+    h.state.pluginSetupOpen = true;
+    h.state.setupComplete = setupComplete;
+    h.state.setupCanStart = false;
+    Object.assign(h.state.pluginSetup, { status: 'error', error: 'Activation or save failed', checkingUpdate: true });
+    h.render();
+    const card = h.byID('setup-steps').children[1];
+    const action = card.querySelector('.setup-actions').children.at(-1);
+    assert.equal(action.textContent, 'Retry');
+    assert.equal(action.hidden, false);
+    assert.equal(action.disabled, false);
+    await action.onclick();
+    assert.deepEqual(h.calls, ['check']);
+    h.state.phase = 'setup';
+    h.state.setupCanStart = true;
+    Object.assign(h.state.pluginSetup, { status: 'ready', error: '', checkingUpdate: false });
+    h.render();
+    assert.equal(h.byID('setup-start').disabled, false);
+    assert.equal(h.byID('setup-start').textContent, setupComplete ? 'Apply' : 'Start');
+    await h.byID('setup-start').onclick();
+    assert.deepEqual(h.calls, ['check', 'start']);
+  }
 });
 
 test('CLI sessions import is compact and has no description or selection instructions', async () => {

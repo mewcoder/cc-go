@@ -219,8 +219,7 @@
     status.textContent = 'Saving…';
     status.classList.remove('error');
     try {
-      if (key === 'desktop.transcriptWidth') await desktop.setTranscriptWidth(value);
-      else settingsData = await desktop.updateSetting(key, value);
+      settingsData = await desktop.updateSetting(key, value);
       status.textContent = 'Saved';
       setTimeout(() => { if (status.textContent === 'Saved') status.textContent = ''; }, 1600);
     } catch (error) {

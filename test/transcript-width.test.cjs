@@ -47,7 +47,9 @@ test('settings use Claude Desktop copy and keep the host preference out of plugi
   assert.match(shell, /title: 'Transcript Width'/);
   assert.match(shell, /description: 'Maximum width of the transcript and composer columns\.'/);
   assert.match(shell, /enumItemLabels: \['Narrow', 'Medium', 'Wide'\]/);
-  assert.match(shell, /if \(key === 'desktop\.transcriptWidth'\) await desktop\.setTranscriptWidth\(value\)/);
+  assert.match(shell, /if \(key === 'desktop\.transcriptWidth'\) \{\s+control = window\.goWidthControl\.create\(document, \{ value: current, status, save: value => desktop\.setTranscriptWidth\(value\) \}\)/);
+  const saveSetting = shell.slice(shell.indexOf('  async function saveSetting('), shell.indexOf('  function createSettingControl('));
+  assert.doesNotMatch(saveSetting, /transcriptWidth|setTranscriptWidth/);
   const css = fs.readFileSync(require.resolve('../web/composer.css'), 'utf8');
   assert.match(css, /:root \[data-claude-host-composer-anchor\]/);
   assert.match(css, /:root \[class\*="inputWrapper_"\]/);

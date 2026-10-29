@@ -594,14 +594,17 @@ func (a *App) activate(ctx context.Context) (err error) {
 	a.Log("info", "Activated Claude Code "+a.version+" in "+workspace)
 	_, err = p.Call(deadline, "command", map[string]any{"command": "claude-vscode.editor.open"})
 	if err == nil {
+		var saveErr error
 		a.mu.Lock()
 		if !a.state.SetupComplete {
 			a.state.SetupComplete = true
-			if err = a.saveLocked(); err != nil {
-				a.state.SetupComplete = false
-			}
+			saveErr = a.saveLocked()
 		}
 		a.mu.Unlock()
+		if saveErr != nil {
+			// Persistence must not tear down an already usable host and chat view.
+			a.Log("warning", "Claude Code is active, but setup completion could not be saved: "+saveErr.Error())
+		}
 	}
 	return err
 }

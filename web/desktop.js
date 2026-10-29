@@ -183,6 +183,7 @@
 
   Object.defineProperty(window, 'desktop', { value: Object.freeze({
     platform: config.platform,
+    nativeExternalLinks: Boolean(config.nativeExternalLinks),
     getState: refresh,
     refreshGit: requestGitRefresh,
     onState(callback) { stateListeners.add(callback); return () => stateListeners.delete(callback); },

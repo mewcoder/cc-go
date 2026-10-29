@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function desktopHarness({ mounted = false } = {}) {
+function desktopHarness({ mounted = false, nativeExternalLinks } = {}) {
   const attributes = new Map();
   const handlers = new Map();
   const events = new Map();
@@ -22,7 +22,7 @@ function desktopHarness({ mounted = false } = {}) {
   const state = { views: [], workspaces: [], archivedSessions: [], logsOpen: false, sidebarWidth: 248, sidebarCollapsed: false };
   let failLogs = false, blockLogs, failDrafts = false;
   const window = {
-    __goDesktopConfig: { platform: 'linux', token: 'fixture' },
+    __goDesktopConfig: { platform: 'linux', token: 'fixture', nativeExternalLinks },
     addEventListener: (key, fn) => events.set(key, fn),
     goHUD: { gap: 4, height: 20, create: () => ({ render() {}, layout() {}, setDraft() {} }) },
   };
@@ -60,6 +60,13 @@ function desktopHarness({ mounted = false } = {}) {
     logCalls: () => calls.filter(call => call.body?.key === 'logs'),
   };
 }
+
+test('external-link support is advertised only when the host supplies its native bridge', () => {
+  for (const value of [undefined, false, true]) {
+    const h = desktopHarness({ nativeExternalLinks: value });
+    assert.equal(h.window.desktop.nativeExternalLinks, value === true);
+  }
+});
 
 test('archiving and renaming send independent metadata patches', async () => {
   const h = desktopHarness();
