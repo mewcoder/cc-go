@@ -16,6 +16,7 @@ const expected = {
 // Changes made in this host, each rewritten back to the Electron text before hashing.
 const approvedChanges = {
   'shell.html': [
+    ['<h2><button id="toggle-workspaces" type="button" aria-expanded="true" aria-controls="workspace-list">Workspace</button></h2>', '<h2>Workspace</h2>'],
     ['        <button id="new-chat" class="sidebar-new-chat" type="button" disabled>New Chat</button>\n', ''],
     ['<title>CC Go</title>', '<title>Claude VSIX Desktop</title>'],
     ['<h2 id="log-title">VSIX Output</h2>', '<h2 id="log-title">Output</h2>'],
@@ -37,6 +38,9 @@ const approvedChanges = {
     ],
   ],
   'shell.js': [
+    ["    toggleWorkspaces: element('toggle-workspaces'),\n", ''],
+    ["    const listCollapsed = Boolean(state.workspaceListCollapsed);\n    ui.workspaceList.hidden = listCollapsed;\n    ui.toggleWorkspaces.setAttribute('aria-expanded', String(!listCollapsed));\n    ui.toggleWorkspaces.disabled = !desktop || pending.has('workspace-list');\n", ''],
+    ["  ui.toggleWorkspaces.addEventListener('click', () => {\n    void runCommand('workspace-list', () => desktop.setWorkspaceListCollapsed(!state.workspaceListCollapsed));\n  });\n", ''],
     ["      entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);\n", ''],
     ["    if (key === 'desktop.transcriptWidth') {\n      control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });\n    } else if (property.type === 'boolean') {", "    if (property.type === 'boolean') {"],
     ["  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });", "  ui.setupSelectCli.addEventListener('click', () => { void runCommand('plugin', () => desktop.selectClaude()); });\n  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });"],
