@@ -7,6 +7,10 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const dependencies = require('../package.json').dependencies;
 
+test('Git preserves LF bytes for embedded dependencies and UI baseline on Windows', () => {
+  assert.match(fs.readFileSync(path.join(root, '.gitattributes'), 'utf8'), /^\* text=auto eol=lf$/m);
+});
+
 for (const name of ['picomatch', 'vscode-uri']) {
   test(`embedded ${name} matches the pinned installed package and retains its license`, () => {
     const directory = path.join(root, 'runtime', 'deps', name);
