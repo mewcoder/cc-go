@@ -27,6 +27,8 @@ body[data-theme="light"] { --shell-archive-background: #e8e8e6; }
 .sidebar-footer .plugin-update.is-busy .icon { animation: none; }
 .connection-status[role="button"] { cursor: pointer; }
 .session-empty { margin: 0; padding: 4px 6px 6px 28px; color: var(--shell-muted); font-size: 11px; line-height: 1.5; }
+.session-load-more { display: block; width: 100%; min-height: 26px; padding: 0 6px 0 28px; border: 0; color: var(--shell-muted); background: transparent; font-size: 11px; text-align: left; }
+.session-load-more:hover { color: var(--vscode-foreground); background: var(--shell-hover-background); }
 .session-hud {
   position: absolute;
   z-index: 2;

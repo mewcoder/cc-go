@@ -21,6 +21,9 @@ function harness() {
       this.parent = null;
     }
     querySelector(selector) { return this.children.find(child => child.className === selector.slice(1)) || null; }
+    get lastElementChild() { return this.children.at(-1); }
+    addEventListener() {}
+    setAttribute() {}
   }
   const source = fs.readFileSync(path.join(__dirname, '../web/shell.js'), 'utf8');
   const renderSource = source.slice(source.indexOf('  function renderSessions('), source.indexOf('  function renderArchive('));
@@ -31,7 +34,7 @@ function harness() {
     createSessionRow: () => new Element(),
     updateSessionRow(row, session) { row.session = session; },
   });
-  const entry = { sessions: new Map(), sessionList: new Element() };
+  const entry = { sessions: new Map(), sessionList: new Element(), label: { textContent: 'Project' } };
   return { entry, collapsed, render: sessions => render(entry, '/project', sessions, 'active') };
 }
 
@@ -43,7 +46,7 @@ test('an empty expanded project has one quiet placeholder across repeated refres
   assert.equal(placeholder.textContent, 'No chats yet');
   assert.equal(h.entry.sessionList.hidden, false);
   h.render([]);
-  assert.equal(h.entry.sessionList.children.length, 1);
+  assert.equal(h.entry.sessionList.children.filter(child => !child.hidden).length, 1);
   assert.equal(h.entry.sessionList.children[0], placeholder);
 });
 
@@ -52,12 +55,12 @@ test('adding chats removes the placeholder and removing the final chat restores 
   h.render([]);
   h.render([{ id: 'one' }, { id: 'two' }]);
   assert.equal(h.entry.sessionList.querySelector('.session-empty'), null);
-  assert.deepEqual(h.entry.sessionList.children.map(row => row.session.id), ['one', 'two']);
+  assert.deepEqual(h.entry.sessionList.children.filter(row => row.session).map(row => row.session.id), ['one', 'two']);
   h.render([{ id: 'two' }, { id: 'one' }]);
-  assert.deepEqual(h.entry.sessionList.children.map(row => row.session.id), ['two', 'one']);
+  assert.deepEqual(h.entry.sessionList.children.filter(row => row.session).map(row => row.session.id), ['two', 'one']);
   h.render([]);
   assert.equal(h.entry.sessions.size, 0);
-  assert.equal(h.entry.sessionList.children.length, 1);
+  assert.equal(h.entry.sessionList.children.filter(child => !child.hidden).length, 1);
   assert.equal(h.entry.sessionList.children[0].textContent, 'No chats yet');
 });
 
@@ -69,5 +72,5 @@ test('collapsing a project hides its empty state together with its session list'
   h.collapsed.delete('/project');
   h.render([]);
   assert.equal(h.entry.sessionList.hidden, false);
-  assert.equal(h.entry.sessionList.children.length, 1);
+  assert.equal(h.entry.sessionList.children.filter(child => !child.hidden).length, 1);
 });

@@ -513,6 +513,9 @@
   }
 
   function renderSessions(entry, workspacePath, sessions, phase) {
+    entry.sessionLimit ??= 5;
+    const total = sessions.length;
+    sessions = sessions.slice(0, entry.sessionLimit);
     const ids = new Set(sessions.map((session) => session.id));
     for (const [id, node] of entry.sessions) {
       if (!ids.has(id)) {
@@ -538,6 +541,20 @@
       empty.textContent = 'No chats yet';
       entry.sessionList.append(empty);
     } else if (sessions.length) empty?.remove();
+    if (!entry.loadMore) {
+      entry.loadMore = document.createElement('button');
+      entry.loadMore.type = 'button';
+      entry.loadMore.className = 'session-load-more';
+      entry.loadMore.textContent = 'Load More';
+      entry.loadMore.addEventListener('click', () => {
+        entry.sessionLimit += 5;
+        render();
+        if (entry.loadMore.hidden) entry.sessionList.querySelector('.session-row:last-of-type .session-item')?.focus();
+      });
+    }
+    entry.loadMore.hidden = total <= sessions.length;
+    entry.loadMore.setAttribute('aria-label', `Load more chats in ${entry.label.textContent}`);
+    if (entry.sessionList.lastElementChild !== entry.loadMore) entry.sessionList.append(entry.loadMore);
     entry.sessionList.hidden = collapsedWorkspaces.has(workspacePath);
   }
 

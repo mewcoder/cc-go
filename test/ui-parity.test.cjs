@@ -37,6 +37,8 @@ const approvedChanges = {
     ],
   ],
   'shell.js': [
+    ["    entry.sessionLimit ??= 5;\n    const total = sessions.length;\n    sessions = sessions.slice(0, entry.sessionLimit);\n", ''],
+    ["    if (!entry.loadMore) {\n      entry.loadMore = document.createElement('button');\n      entry.loadMore.type = 'button';\n      entry.loadMore.className = 'session-load-more';\n      entry.loadMore.textContent = 'Load More';\n      entry.loadMore.addEventListener('click', () => {\n        entry.sessionLimit += 5;\n        render();\n        if (entry.loadMore.hidden) entry.sessionList.querySelector('.session-row:last-of-type .session-item')?.focus();\n      });\n    }\n    entry.loadMore.hidden = total <= sessions.length;\n    entry.loadMore.setAttribute('aria-label', `Load more chats in ${entry.label.textContent}`);\n    if (entry.sessionList.lastElementChild !== entry.loadMore) entry.sessionList.append(entry.loadMore);\n", ''],
     ["      entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);\n", ''],
     ["    if (key === 'desktop.transcriptWidth') {\n      control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });\n    } else if (property.type === 'boolean') {", "    if (property.type === 'boolean') {"],
     ["  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });", "  ui.setupSelectCli.addEventListener('click', () => { void runCommand('plugin', () => desktop.selectClaude()); });\n  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });"],
