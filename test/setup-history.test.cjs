@@ -246,7 +246,7 @@ test('plugin title stays plain text beside an accessible external-link icon', as
   assert.equal(link.querySelector('svg').attributes['aria-hidden'], 'true');
   assert.ok(link.querySelector('svg').querySelector('path'));
   assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
-  assert.equal(link.target, '_blank');
+  assert.equal(link.target, undefined);
   assert.equal(link.rel, 'noopener noreferrer');
   let prevented = false;
   link.onclick({ preventDefault() { prevented = true; } });
@@ -261,7 +261,20 @@ test('browser preview follows the external link without invoking a missing nativ
   link.onclick({ preventDefault() { prevented = true; } });
   assert.equal(prevented, false);
   assert.equal(link.href, 'https://open-vsx.org/extension/Anthropic/claude-code');
+  assert.equal(link.target, '_blank');
   assert.deepEqual(h.calls, []);
+});
+
+test('native middle-click uses the external bridge, while right-click keeps its context menu', () => {
+  const h = setupHarness();
+  const link = h.byID('setup-steps').children[1].querySelector('.setup-plugin-link');
+  let prevented = 0;
+  link.handlers.auxclick({ type: 'auxclick', button: 1, preventDefault() { prevented++; } });
+  link.handlers.auxclick({ type: 'auxclick', button: 2, preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  assert.deepEqual(h.calls, ['open-download']);
+  const browser = setupHarness('setup', false);
+  browser.byID('setup-steps').children[1].querySelector('.setup-plugin-link').handlers.auxclick({ type: 'auxclick', button: 1, preventDefault() { throw new Error('browser middle-click must follow href'); } });
 });
 
 test('native link failures survive state polling until a new operation starts', async () => {
@@ -480,6 +493,41 @@ test('failed activation and final prepare saves keep an offline-capable Retry vi
     await h.byID('setup-start').onclick();
     assert.deepEqual(h.calls, ['check', 'start']);
   }
+});
+
+test('cancelled updates retry the download rather than tearing down the active cached host', async () => {
+  for (const updateAvailable of [false, true]) {
+    const h = setupHarness('active');
+    Object.assign(h.state, { setupComplete: true, pluginSetupOpen: true });
+    Object.assign(h.state.pluginSetup, { status: 'cancelled', runtimeReady: true, updateAvailable });
+    h.render();
+    const action = h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1);
+    assert.equal(action.textContent, 'Retry');
+    assert.equal(action.hidden, false);
+    await action.onclick();
+    assert.deepEqual(h.calls, ['update-plugin']);
+    assert.equal(h.byID('setup-start').textContent, 'Close');
+  }
+});
+
+test('setup save warnings are nonfatal, survive polling and clear after a successful save', () => {
+  const h = setupHarness('active');
+  Object.assign(h.state, { setupComplete: true, pluginSetupOpen: true });
+  h.state.pluginSetup.saveError = 'Disk full';
+  h.render();
+  const card = h.byID('setup-steps').children[1];
+  const warning = card.querySelector('.setup-save-warning');
+  assert.equal(warning.attributes.role, 'status');
+  assert.equal(warning.hidden, false);
+  assert.equal(warning.title, 'Disk full');
+  assert.match(warning.textContent, /Settings not saved.*restart/);
+  assert.equal(card.querySelector('.setup-step-error').hidden, true);
+  assert.equal(h.byID('setup-start').disabled, false);
+  h.render();
+  assert.equal(warning.hidden, false);
+  h.state.pluginSetup.saveError = '';
+  h.render();
+  assert.equal(warning.hidden, true);
 });
 
 test('CLI sessions import is compact and has no description or selection instructions', async () => {

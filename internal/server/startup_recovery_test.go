@@ -18,7 +18,9 @@ import (
 
 func blockDesktopSave(t *testing.T, a *App) string {
 	t.Helper()
+	a.mu.Lock()
 	file := filepath.Join(a.cfg.DataDir, "desktop.json")
+	a.mu.Unlock()
 	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func blockDesktopSave(t *testing.T, a *App) string {
 func TestActivationSurvivesSetupCompletionSaveFailure(t *testing.T) {
 	a := testApp(t)
 	prepareChatFixture(t, a)
-	blockDesktopSave(t, a)
+	blocked := blockDesktopSave(t, a)
 	if w := postAPI(a, "/api/start", map[string]any{}); w.Code != 200 {
 		t.Fatalf("successful activation was reported as a failure: %d %s", w.Code, w.Body.String())
 	}
@@ -55,6 +57,42 @@ func TestActivationSurvivesSetupCompletionSaveFailure(t *testing.T) {
 	if !strings.Contains(logs, "setup completion could not be saved") {
 		t.Fatal("persistence failure was silently discarded")
 	}
+	setup := a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["saveError"] == "" {
+		t.Fatal("nonfatal persistence failure is missing from the UI snapshot")
+	}
+	if err := os.RemoveAll(blocked); err != nil {
+		t.Fatal(err)
+	}
+	if w := postAPI(a, "/api/theme", map[string]any{"theme": "light"}); w.Code != 200 {
+		t.Fatal("later state save failed:", w.Body.String())
+	}
+	if a.snapshot()["pluginSetup"].(map[string]any)["saveError"] != "" {
+		t.Fatal("successful state save did not clear the warning")
+	}
+	a.mu.Lock()
+	cfg := a.cfg
+	a.mu.Unlock()
+	restored, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restored.Close)
+	restored.mu.Lock()
+	persisted := restored.state.SetupComplete
+	restored.mu.Unlock()
+	if !persisted {
+		t.Fatal("later save did not persist setup completion")
+	}
+}
+
+// These tests intentionally run serially; restore nested registry/transport
+// overrides in LIFO order, including after assertion failures.
+func replaceRecoveryTransport(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+	previous := http.DefaultTransport
+	http.DefaultTransport = transport
+	t.Cleanup(func() { http.DefaultTransport = previous })
 }
 
 func TestActivationFailureCanPrepareAndStartAgainOffline(t *testing.T) {
@@ -62,33 +100,39 @@ func TestActivationFailureCanPrepareAndStartAgainOffline(t *testing.T) {
 		t.Run(map[bool]string{false: "first-run", true: "returning-user"}[completed], func(t *testing.T) {
 			a := testApp(t)
 			useTestNode(t, a)
-			a.cfg.ModulesDir, _ = filepath.Abs("../../node_modules")
+			modules, _ := filepath.Abs("../../node_modules")
+			a.mu.Lock()
+			a.cfg.ModulesDir = modules
+			a.mu.Unlock()
 			marker := filepath.Join(t.TempDir(), "allow-activation")
 			archive := activationRecoveryArchive(t, marker)
 			if err := a.prepare(t.Context(), archive); err != nil {
 				t.Fatal(err)
 			}
+			a.mu.Lock()
 			a.state.SetupComplete = completed
 			a.cfg.VSIX = a.state.Archive
-			transport := http.DefaultTransport
-			http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			a.mu.Unlock()
+			replaceRecoveryTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				return nil, errors.New("offline: unexpected request to " + r.URL.String())
-			})
-			defer func() { http.DefaultTransport = transport }()
+			}))
 			if w := postAPI(a, "/api/start", map[string]any{}); w.Code != 400 {
 				t.Fatalf("activation failure was not surfaced: %d %s", w.Code, w.Body.String())
 			}
 			setup := a.snapshot()["pluginSetup"].(map[string]any)
-			if setup["status"] != "error" || setup["runtimeReady"] != true || a.peer != nil {
+			a.mu.Lock()
+			stopped := a.peer == nil
+			a.mu.Unlock()
+			if setup["status"] != "error" || setup["runtimeReady"] != true || !stopped {
 				t.Fatal("failed activation did not retain the prepared runtime for recovery")
 			}
 			if err := os.WriteFile(marker, []byte("ready"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if w := postAPI(a, "/api/retry", map[string]any{}); w.Code != 200 || a.setupStatus != "ready" {
+			if w := postAPI(a, "/api/retry", map[string]any{}); w.Code != 200 || a.snapshot()["pluginSetup"].(map[string]any)["status"] != "ready" {
 				t.Fatalf("offline retry failed: %d %s", w.Code, w.Body.String())
 			}
-			if w := postAPI(a, "/api/start", map[string]any{}); w.Code != 200 || a.phase != "active" || a.peer == nil {
+			if w := postAPI(a, "/api/start", map[string]any{}); w.Code != 200 || a.snapshot()["phase"] != "active" {
 				t.Fatalf("start after retry failed: %d %s", w.Code, w.Body.String())
 			}
 		})
@@ -156,12 +200,14 @@ func TestFinalPrepareSaveFailureCanRetryCachedVSIXOffline(t *testing.T) {
 	if err := os.RemoveAll(blocked); err != nil {
 		t.Fatal(err)
 	}
-	transport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	replaceRecoveryTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return nil, errors.New("offline: unexpected request to " + r.URL.String())
-	})
-	defer func() { http.DefaultTransport = transport }()
-	if w := postAPI(a, "/api/retry", map[string]any{}); w.Code != 200 || a.setupStatus != "ready" || a.state.Archive != archive {
+	}))
+	w := postAPI(a, "/api/retry", map[string]any{})
+	a.mu.Lock()
+	ready, saved := a.setupStatus == "ready", a.state.Archive
+	a.mu.Unlock()
+	if w.Code != 200 || !ready || saved != archive {
 		t.Fatalf("cached retry after failed save: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -189,7 +235,7 @@ func TestCloseCancelsAPIOperationsWithoutWaitingForRequestTimeout(t *testing.T) 
 				fixtureRegistry(t, "1.2.4")
 			}
 			transport := http.DefaultTransport
-			http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			replaceRecoveryTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				if scenario.body {
 					res, err := transport.RoundTrip(r)
 					if err == nil && r.URL.Path == "/plugin.vsix" {
@@ -200,8 +246,7 @@ func TestCloseCancelsAPIOperationsWithoutWaitingForRequestTimeout(t *testing.T) 
 				close(started)
 				<-r.Context().Done()
 				return nil, r.Context().Err()
-			})
-			defer func() { http.DefaultTransport = transport }()
+			}))
 			// The request itself is deliberately kept alive, as with a desktop webview.
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -250,5 +295,71 @@ func TestExternalLinkCapabilityTracksTheActualNativeBridge(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
 			t.Fatalf("incorrect native capability: %d %s", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestCancelledUpdateRetriesDownloadWithoutReplacingTheActiveHost(t *testing.T) {
+	a := testApp(t)
+	prepareChatFixture(t, a)
+	if err := a.activate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	peer, active, archive := a.peer, a.active, a.state.Archive
+	a.latestVersion = "1.2.4"
+	a.mu.Unlock()
+	fixtureRegistry(t, "1.2.4")
+	transport := http.DefaultTransport
+	for attempt := 0; attempt < 2; attempt++ {
+		started := make(chan struct{})
+		replaceRecoveryTransport(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			res, err := transport.RoundTrip(r)
+			if err == nil && r.URL.Path == "/plugin.vsix" {
+				res.Body = &stalledDownload{ReadCloser: res.Body, ctx: r.Context(), started: started}
+			}
+			return res, err
+		}))
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() { done <- postAPI(a, "/api/update-plugin", map[string]any{}) }()
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			a.cancelDownload()
+			t.Fatal("update retry did not download the new version")
+		}
+		a.mu.Lock()
+		preserved := a.peer == peer && a.active == active && a.state.Archive == archive
+		a.mu.Unlock()
+		if !preserved {
+			a.cancelDownload()
+			t.Fatal("retry replaced the active host before validating the download")
+		}
+		if w := postAPI(a, "/api/cancel-download", map[string]any{}); w.Code != 200 {
+			t.Fatal(w.Body.String())
+		}
+		select {
+		case w := <-done:
+			if w.Code != 200 || !strings.Contains(w.Body.String(), `"cancelled":true`) {
+				t.Fatalf("cancel failed: %d %s", w.Code, w.Body.String())
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("cancelling retry did not stop the download")
+		}
+		snapshot := a.snapshot()
+		setup := snapshot["pluginSetup"].(map[string]any)
+		a.mu.Lock()
+		preserved = a.peer == peer && a.active == active && a.state.Archive == archive
+		a.mu.Unlock()
+		if !preserved || snapshot["phase"] != "active" || snapshot["pluginSetupOpen"] != true || setup["status"] != "cancelled" || setup["runtimeReady"] != true || setup["updateAvailable"] != true {
+			t.Fatal("cancel lost the usable old host or the pending update")
+		}
+	}
+	replaceRecoveryTransport(t, transport)
+	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 200 {
+		t.Fatalf("final update retry: %d %s", w.Code, w.Body.String())
+	}
+	setup := a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["readyVersion"] != "1.2.4" || setup["status"] != "ready" {
+		t.Fatal("successful retry did not prepare the newer version")
 	}
 }

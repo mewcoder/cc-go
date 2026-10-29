@@ -52,7 +52,7 @@ func (a *App) snapshot() map[string]any {
 		"sessionMetrics":   a.metrics[key],
 		"viewLoading":      a.phase == "active" && (activeView == nil || activeView.HTML == ""),
 		"extension":        map[string]any{"id": "Anthropic.claude-code", "version": a.version},
-		"pluginSetup":      map[string]any{"status": a.setupStatus, "step": a.setupStep, "nodeVersion": a.nodeVersion, "nodePath": a.nodePath, "nodeError": a.nodeError, "runtimePath": a.runtimePath, "runtimeReady": a.runtimePath != "", "readyVersion": a.version, "latestVersion": a.latestVersion, "checkingUpdate": a.checkingUpdate, "updateAvailable": plugin.NewerVersion(a.latestVersion, a.version), "updateError": a.updateError, "platform": plugin.Platform(), "directory": filepath.Join(a.cfg.DataDir, "vsix"), "error": a.errorText},
+		"pluginSetup":      map[string]any{"status": a.setupStatus, "step": a.setupStep, "nodeVersion": a.nodeVersion, "nodePath": a.nodePath, "nodeError": a.nodeError, "runtimePath": a.runtimePath, "runtimeReady": a.runtimePath != "", "readyVersion": a.version, "latestVersion": a.latestVersion, "checkingUpdate": a.checkingUpdate, "updateAvailable": plugin.NewerVersion(a.latestVersion, a.version), "updateError": a.updateError, "saveError": a.setupSaveError, "platform": plugin.Platform(), "directory": filepath.Join(a.cfg.DataDir, "vsix"), "error": a.errorText},
 	}
 	if a.phase == "preparing" {
 		result["phase"] = "setup"

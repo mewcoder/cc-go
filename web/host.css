@@ -263,6 +263,7 @@ body[data-theme="light"] .setup-vertical { --setup-success: #438453; }
 .setup-download-status, .setup-update-status { margin: 6px 0 0; color: var(--setup-muted); font-size: 12px; overflow-wrap: anywhere; }
 .setup-card-details > .setup-update-status { margin: 0; max-width: 100%; }
 .setup-update-status[role="alert"] { color: var(--vscode-errorForeground); }
+.setup-save-warning { flex-basis: 100%; margin: 0; color: var(--setup-muted); font-size: 12px; overflow-wrap: anywhere; }
 .setup-vertical summary { color: var(--setup-muted); font-size: 11px; cursor: pointer; }
 .setup-vertical .setup-directory { font-size: 10px; }
 .setup-vertical .setup-progress { height: 4px; margin: 12px 0 0; appearance: none; border: 0; border-radius: 2px; overflow: hidden; background: var(--setup-line); color: var(--setup-accent); accent-color: var(--setup-accent); }

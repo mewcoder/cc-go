@@ -108,6 +108,7 @@ type App struct {
 	latestVersion   string
 	checkingUpdate  bool
 	updateError     string
+	setupSaveError  string
 	updateMu        sync.Mutex
 	nodeVersion     string
 	nodePath        string
@@ -339,7 +340,11 @@ func (a *App) saveLocked() error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return os.Rename(f.Name(), filepath.Join(a.cfg.DataDir, "desktop.json"))
+	if err := os.Rename(f.Name(), filepath.Join(a.cfg.DataDir, "desktop.json")); err != nil {
+		return err
+	}
+	a.setupSaveError = ""
+	return nil
 }
 
 func (a *App) Log(level, text string) {
@@ -599,10 +604,14 @@ func (a *App) activate(ctx context.Context) (err error) {
 		if !a.state.SetupComplete {
 			a.state.SetupComplete = true
 			saveErr = a.saveLocked()
+			if saveErr != nil {
+				a.setupSaveError = saveErr.Error()
+			}
 		}
 		a.mu.Unlock()
 		if saveErr != nil {
-			// Persistence must not tear down an already usable host and chat view.
+			// Keep the usable host; any later successful state save persists SetupComplete
+			// and clears the nonfatal warning.
 			a.Log("warning", "Claude Code is active, but setup completion could not be saved: "+saveErr.Error())
 		}
 	}

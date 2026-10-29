@@ -170,7 +170,8 @@ func fixtureRegistry(t *testing.T, version string, archiveVersion ...string) *in
 		case "https://fixture.invalid/plugin.vsix":
 			body = archive
 		default:
-			t.Fatalf("unexpected request: %s", r.URL)
+			t.Errorf("unexpected request: %s", r.URL)
+			return nil, errors.New("unexpected registry request: " + r.URL.String())
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})

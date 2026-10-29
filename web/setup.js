@@ -87,7 +87,7 @@
       const link = create('a', 'setup-plugin-link');
       link.href = 'https://open-vsx.org/extension/Anthropic/claude-code';
       link.title = 'Open in Open VSX';
-      link.target = '_blank';
+      if (!window.desktop?.nativeExternalLinks) link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.setAttribute('aria-label', link.title);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -100,12 +100,14 @@
       path.setAttribute('d', 'M15 3h6v6 M10 14 21 3 M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5');
       svg.append(path);
       link.append(svg);
-      link.onclick = event => {
-        if (!window.desktop.nativeExternalLinks) return;
+      const openLink = event => {
+        if (!window.desktop?.nativeExternalLinks || event.type === 'auxclick' && event.button !== 1) return;
         event.preventDefault();
         actionErrors[1] = '';
         void window.desktop.openPluginDownload().catch(error => showActionError(error, 1));
       };
+      link.onclick = openLink;
+      link.addEventListener('auxclick', openLink);
       header.append(link);
     }
     const status = create('span', 'setup-card-status', 'Pending');
@@ -170,6 +172,9 @@
   const updateStatus = create('p', 'setup-update-status');
   updateStatus.setAttribute('role', 'status');
   cards[1].details.append(updateStatus);
+  const saveWarning = create('p', 'setup-save-warning');
+  saveWarning.setAttribute('role', 'status');
+  cards[1].details.append(saveWarning);
 
   const footer = create('div', 'setup-footer');
   const start = create('button', 'setup-primary', 'Start');
@@ -203,9 +208,14 @@
   function render(state) {
     const setup = state.pluginSetup || {};
     const view = setupView(state);
-    needsRecovery = state.phase === 'error' || setup.status === 'error' || setup.status === 'cancelled';
-    const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy && !needsRecovery;
+    // Cancelling an update leaves the old runtime usable; Retry must download
+    // again, not reload that old archive and discard its chat views.
+    const retryDownload = setup.status === 'cancelled' && view.runtimeReady;
+    needsRecovery = state.phase === 'error' || setup.status === 'error' || setup.status === 'cancelled' && !view.runtimeReady;
+    const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy && !needsRecovery && !retryDownload;
     const visible = Boolean(state.pluginSetupOpen);
+    // A new operation or closed panel ends the previous local error's lifetime;
+    // ordinary state polling must leave that error visible.
     if (!visible || view.busy) actionErrors.fill('');
     root.hidden = !visible;
     if (visible && !dialog.open) dialog.showModal();
@@ -256,11 +266,13 @@
     $('setup-retry').disabled = view.busy;
     $('setup-import').disabled = view.busy || !view.nodeReady;
     updateAvailable = Boolean(setup.updateAvailable);
-    installLatest = updateAvailable || !view.runtimeReady;
-    text(update, needsRecovery ? 'Retry' : setup.checkingUpdate ? 'Checking for Updates…' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
+    installLatest = retryDownload || updateAvailable || !view.runtimeReady;
+    text(update, needsRecovery || retryDownload ? 'Retry' : setup.checkingUpdate ? 'Checking for Updates…' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
     if (view.busy) text(update, view.busyLabel);
     update.hidden = !view.nodeReady || initialReady;
     update.setAttribute('aria-label', update.textContent);
+    // Metadata checks use a separate lock and cannot replace the runtime. Do not
+    // let a slow background check block local recovery after activation fails.
     update.disabled = view.busy || (!needsRecovery && setup.checkingUpdate) || !view.nodeReady;
     cancel.hidden = !setup.canCancel;
     cancel.disabled = setup.status === 'cancelling';
@@ -269,7 +281,10 @@
       : setup.latestVersion ? 'Latest' : '');
     updateStatus.setAttribute('role', setup.updateError ? 'alert' : 'status');
     updateStatus.hidden = view.busy || !updateStatus.textContent || !state.setupComplete && !setup.updateError;
-    cards[1].details.hidden = cards[1].version.hidden && cards[1].hint.hidden && updateStatus.hidden;
+    text(saveWarning, setup.saveError ? 'Settings not saved. Setup may appear again after restart.' : '');
+    saveWarning.title = setup.saveError || '';
+    saveWarning.hidden = !setup.saveError;
+    cards[1].details.hidden = cards[1].version.hidden && cards[1].hint.hidden && updateStatus.hidden && saveWarning.hidden;
     const indicator = $('plugin-update');
     if (indicator) {
       indicator.hidden = state.phase !== 'active' || !updateAvailable;
