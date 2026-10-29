@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+    <title>CC Go</title>
+    <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="shell.css">
+    <script src="shell.js" defer></script>
+  </head>
+  <body data-phase="starting" data-theme="dark" data-initializing="true">
+    <div id="window-controls" class="window-drag">
+      <button id="toggle-sidebar" class="window-toggle" type="button" title="Hide Sidebar" aria-label="Hide Sidebar"></button>
+    </div>
+    <div class="content">
+      <aside class="sidebar" aria-label="Workspace">
+        <button id="new-chat" class="sidebar-new-chat" type="button" disabled>New Chat</button>
+        <div class="sidebar-header">
+          <h2>Workspace</h2>
+          <button id="add-workspace" class="icon-button" type="button" title="Add Workspace" aria-label="Add Workspace" disabled>+</button>
+        </div>
+        <nav id="workspace-list" class="workspace-list" aria-label="Workspace list"></nav>
+        <section class="archive-section" aria-label="Archived chats">
+          <button id="toggle-archive" class="archive-toggle" type="button" aria-expanded="false" aria-controls="archive-list">
+            <span id="archive-icon" aria-hidden="true"></span>
+            <span>Archive</span>
+            <span id="archive-count" class="archive-count">0</span>
+          </button>
+          <div id="archive-list" class="archive-list" hidden></div>
+        </section>
+        <div class="sidebar-footer">
+          <span id="connection-status" class="connection-status" role="status" tabindex="0">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connection-label">Connecting</span>
+          </span>
+          <button id="plugin-update" class="plugin-update" type="button" title="Update VS Code extension (.vsix)" aria-label="Update VS Code extension (.vsix)" hidden></button>
+          <div class="sidebar-actions" role="group" aria-label="Common actions">
+            <button id="toggle-theme" class="icon-button" type="button" title="Change Theme" aria-label="Change Theme" disabled></button>
+            <button id="open-settings" class="icon-button" type="button" title="Settings" aria-label="Settings" disabled></button>
+          </div>
+        </div>
+      </aside>
+      <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="420" tabindex="0"></div>
+      <main id="webview-region" class="webview-region" aria-label="Claude extension view">
+        <section id="plugin-setup" class="plugin-setup" aria-labelledby="setup-title" hidden>
+          <div class="setup-heading">
+            <h1 id="setup-title">Setup</h1>
+            <button id="setup-back" type="button" hidden>Back to Chat</button>
+          </div>
+          <ol id="setup-steps" class="setup-steps" aria-label="Setup steps">
+            <li><span class="setup-step-number" aria-hidden="true">1</span><span>Check Claude Code</span></li>
+            <li><span class="setup-step-number" aria-hidden="true">2</span><span>Download VS Code extension (.vsix)</span></li>
+          </ol>
+          <div class="setup-status" role="status" aria-live="polite">
+            <span id="setup-indicator" class="loading-indicator" aria-hidden="true"></span>
+            <span id="setup-status-text">Checking Claude Code…</span>
+          </div>
+          <progress id="setup-progress" class="setup-progress" aria-label="VS Code extension (.vsix) download progress" hidden></progress>
+          <dl class="setup-info">
+            <div><dt>Claude Code Version</dt><dd id="setup-cli-version">Checking</dd></div>
+            <div><dt>Platform</dt><dd id="setup-platform"></dd></div>
+          </dl>
+          <p id="setup-error" class="setup-error" role="alert" hidden></p>
+          <div id="setup-install" class="setup-install" hidden>
+            <p>Install Claude Code in a terminal, then click "Check Again". You need Node.js and npm.</p>
+            <div class="setup-command"><code>npm install -g @anthropic-ai/claude-code</code><button id="setup-copy-install" type="button">Copy</button></div>
+          </div>
+          <div class="setup-actions">
+            <button id="setup-retry" class="setup-primary" type="button">Check Again</button>
+            <button id="setup-select-cli" type="button">Select Executable</button>
+          </div>
+          <details class="setup-offline" hidden>
+            <summary>Download or Import VS Code extension (.vsix)</summary>
+            <p>Download the VS Code extension (.vsix) for your Claude Code version and platform. Import it, or put it in the folder below and click "Check Again".</p>
+            <div class="setup-actions">
+              <button id="setup-open-download" type="button">Download from Open VSX</button>
+              <button id="setup-import" type="button">Import VS Code extension (.vsix)</button>
+            </div>
+            <button id="setup-open-directory" class="setup-directory" type="button" title="Open VS Code extension (.vsix) Folder"></button>
+          </details>
+        </section>
+        <section id="phase-message" class="phase-message" role="status" aria-live="polite">
+          <span class="loading-indicator" aria-hidden="true"></span>
+          <h1 id="message-title">Starting the app</h1>
+          <p id="message-detail">Setting up Claude Code.</p>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="settings-panel" class="settings-panel" aria-labelledby="settings-title" hidden>
+      <header class="settings-header">
+        <h1 id="settings-title">Settings</h1>
+        <button id="close-settings" class="settings-close" type="button" title="Close Settings" aria-label="Close Settings" autofocus></button>
+      </header>
+      <div id="settings-content" class="settings-content">
+        <div id="settings-list" class="settings-list"></div>
+      </div>
+    </dialog>
+
+    <section id="log-panel" class="log-panel" aria-labelledby="log-title" hidden>
+      <div class="log-toolbar">
+        <h2 id="log-title">VSIX Output</h2>
+        <button id="close-logs" class="quiet-button" type="button" title="Close VSIX Output" aria-label="Close VSIX Output"></button>
+      </div>
+      <pre id="log-output" class="log-output" tabindex="0" aria-label="VSIX Output contents">No output yet.</pre>
+    </section>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+.tools/
+node_modules/
+build/
+release/
+*.syso
+.DS_Store
+*.log
+test-artifacts/

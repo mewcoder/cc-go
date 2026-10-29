@@ -1,0 +1,280 @@
+{
+  "date": "2026-10-29",
+  "baseline": "098501c328c0db73ac584ba3b97af6230b29e8ed",
+  "candidate": "codex/mygo working tree",
+  "scenario": "background setup, no Node/CLI/VSIX",
+  "sizes": {
+    "wails": {
+      "executable_bytes": 12367360,
+      "bundle_bytes": 13787757,
+      "zip_bytes": 6516956,
+      "executable_sha256": "74f1a3d42b91d5f71b5ee04b79b41395b8b23cb3f0305c4ccd678fe431f80044"
+    },
+    "mygo": {
+      "executable_bytes": 10676640,
+      "bundle_bytes": 12097037,
+      "zip_bytes": 5964278,
+      "executable_sha256": "cd7756b97b11cf233200af8218559d8a0f54b19ee708ea1ab8df67fd10ef5931"
+    }
+  },
+  "summary": {
+    "wails": {
+      "startup_ms": {
+        "median": 533.2123329862952,
+        "min": 470.8769579883665,
+        "max": 576.9633750896901
+      },
+      "memory_app_bytes": {
+        "median": 44598640.0,
+        "min": 43943232.0,
+        "max": 45106592.0
+      },
+      "memory_total_bytes": {
+        "median": 120114584.0,
+        "min": 118828368.0,
+        "max": 120352200.0
+      },
+      "idle_cpu_app_pct_one_core": {
+        "median": 0.011679616702008842,
+        "min": 0.009820469424066723,
+        "max": 0.013380489795410695
+      },
+      "idle_cpu_total_pct_one_core": {
+        "median": 0.020374037076532105,
+        "min": 0.015100024225423926,
+        "max": 0.020914968961129935
+      },
+      "runs": 5,
+      "failed_runs": [],
+      "visibility_at_ready": [
+        "hidden",
+        "hidden",
+        "hidden",
+        "hidden",
+        "hidden"
+      ],
+      "webkit_process_counts": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    },
+    "mygo": {
+      "startup_ms": {
+        "median": 528.3360829344019,
+        "min": 485.6502499897033,
+        "max": 591.0024170298129
+      },
+      "memory_app_bytes": {
+        "median": 44877168.0,
+        "min": 44123528.0,
+        "max": 45073800.0
+      },
+      "memory_total_bytes": {
+        "median": 119885232.0,
+        "min": 118664600.0,
+        "max": 120352116.0
+      },
+      "idle_cpu_app_pct_one_core": {
+        "median": 0.012341091380022507,
+        "min": 0.010321367971433399,
+        "max": 0.014554577687861845
+      },
+      "idle_cpu_total_pct_one_core": {
+        "median": 0.022728862102582216,
+        "min": 0.018394769765669932,
+        "max": 0.024668969475536696
+      },
+      "runs": 5,
+      "failed_runs": [],
+      "visibility_at_ready": [
+        "hidden",
+        "hidden",
+        "hidden",
+        "hidden",
+        "hidden"
+      ],
+      "webkit_process_counts": [
+        3,
+        3,
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "runs": [
+    {
+      "variant": "wails",
+      "iteration": 1,
+      "startup_ms": 571.6636250726879,
+      "visibility_at_ready": "hidden",
+      "pid": 47160,
+      "webkit_pids": [
+        47163,
+        47164,
+        47165
+      ],
+      "memory_app_bytes": 44598640.0,
+      "memory_total_bytes": 120352200.0,
+      "idle_cpu_app_pct_one_core": 0.011679616702008842,
+      "idle_cpu_total_pct_one_core": 0.020374037076532105,
+      "sample_window_s": 6.029821165953763
+    },
+    {
+      "variant": "mygo",
+      "iteration": 2,
+      "startup_ms": 580.8057920075953,
+      "visibility_at_ready": "hidden",
+      "pid": 47391,
+      "webkit_pids": [
+        47393,
+        47394,
+        47395
+      ],
+      "memory_app_bytes": 45073800.0,
+      "memory_total_bytes": 119852440.0,
+      "idle_cpu_app_pct_one_core": 0.013572623318220834,
+      "idle_cpu_total_pct_one_core": 0.024183435491404056,
+      "sample_window_s": 6.028473500045948
+    },
+    {
+      "variant": "mygo",
+      "iteration": 3,
+      "startup_ms": 492.8423340898007,
+      "visibility_at_ready": "hidden",
+      "pid": 47634,
+      "webkit_pids": [
+        47635,
+        47636,
+        47637
+      ],
+      "memory_app_bytes": 44877168.0,
+      "memory_total_bytes": 120352116.0,
+      "idle_cpu_app_pct_one_core": 0.014554577687861845,
+      "idle_cpu_total_pct_one_core": 0.024668969475536696,
+      "sample_window_s": 6.0103564580203965
+    },
+    {
+      "variant": "wails",
+      "iteration": 4,
+      "startup_ms": 576.9633750896901,
+      "visibility_at_ready": "hidden",
+      "pid": 47868,
+      "webkit_pids": [
+        47871,
+        47872,
+        47873
+      ],
+      "memory_app_bytes": 44287368.0,
+      "memory_total_bytes": 119270832.0,
+      "idle_cpu_app_pct_one_core": 0.013380489795410695,
+      "idle_cpu_total_pct_one_core": 0.020914968961129935,
+      "sample_window_s": 6.02788845798932
+    },
+    {
+      "variant": "wails",
+      "iteration": 5,
+      "startup_ms": 475.26487498544157,
+      "visibility_at_ready": "hidden",
+      "pid": 48097,
+      "webkit_pids": [
+        48101,
+        48102,
+        48118
+      ],
+      "memory_app_bytes": 44696944.0,
+      "memory_total_bytes": 120319360.0,
+      "idle_cpu_app_pct_one_core": 0.009820469424066723,
+      "idle_cpu_total_pct_one_core": 0.015100024225423926,
+      "sample_window_s": 6.0262088750023395
+    },
+    {
+      "variant": "mygo",
+      "iteration": 6,
+      "startup_ms": 528.3360829344019,
+      "visibility_at_ready": "hidden",
+      "pid": 48716,
+      "webkit_pids": [
+        48717,
+        48719,
+        48720
+      ],
+      "memory_app_bytes": 44361096.0,
+      "memory_total_bytes": 119885232.0,
+      "idle_cpu_app_pct_one_core": 0.012341091380022507,
+      "idle_cpu_total_pct_one_core": 0.022728862102582216,
+      "sample_window_s": 6.017701167031191
+    },
+    {
+      "variant": "mygo",
+      "iteration": 7,
+      "startup_ms": 485.6502499897033,
+      "visibility_at_ready": "hidden",
+      "pid": 48956,
+      "webkit_pids": [
+        48958,
+        48959,
+        48960
+      ],
+      "memory_app_bytes": 44918140.0,
+      "memory_total_bytes": 119901556.0,
+      "idle_cpu_app_pct_one_core": 0.010321367971433399,
+      "idle_cpu_total_pct_one_core": 0.018394769765669932,
+      "sample_window_s": 6.02082012500614
+    },
+    {
+      "variant": "wails",
+      "iteration": 8,
+      "startup_ms": 533.2123329862952,
+      "visibility_at_ready": "hidden",
+      "pid": 49181,
+      "webkit_pids": [
+        49185,
+        49186,
+        49187
+      ],
+      "memory_app_bytes": 43943232.0,
+      "memory_total_bytes": 118828368.0,
+      "idle_cpu_app_pct_one_core": 0.011173073805574866,
+      "idle_cpu_total_pct_one_core": 0.017712810810668257,
+      "sample_window_s": 6.0193552079144865
+    },
+    {
+      "variant": "wails",
+      "iteration": 9,
+      "startup_ms": 470.8769579883665,
+      "visibility_at_ready": "hidden",
+      "pid": 49414,
+      "webkit_pids": [
+        49417,
+        49418,
+        49419
+      ],
+      "memory_app_bytes": 45106592.0,
+      "memory_total_bytes": 120114584.0,
+      "idle_cpu_app_pct_one_core": 0.012426530379634192,
+      "idle_cpu_total_pct_one_core": 0.020874715613684584,
+      "sample_window_s": 6.027732416987419
+    },
+    {
+      "variant": "mygo",
+      "iteration": 10,
+      "startup_ms": 591.0024170298129,
+      "visibility_at_ready": "hidden",
+      "pid": 49626,
+      "webkit_pids": [
+        49628,
+        49629,
+        49647
+      ],
+      "memory_app_bytes": 44123528.0,
+      "memory_total_bytes": 118664600.0,
+      "idle_cpu_app_pct_one_core": 0.01116800006381648,
+      "idle_cpu_total_pct_one_core": 0.02061145922501058,
+      "sample_window_s": 6.024211999960243
+    }
+  ]
+}

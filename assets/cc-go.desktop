@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=CC Go
+Comment=Claude Code VS Code extension (.vsix) in a native Go desktop host
+Exec=cc-go
+Icon=cc-go
+Terminal=false
+Categories=Development;
+StartupWMClass=cc-go

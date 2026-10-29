@@ -1,0 +1,19 @@
+/* Keep room below the floating composer without adding a document-flow row. */
+[data-claude-host-composer-anchor] { translate: 0 -12px; }
+
+/* Limit the columns, not the webview or the transcript's scroll area. */
+:root [data-claude-host-composer-anchor],
+:root [class*="inputWrapper_"] {
+  max-width: var(--claude-host-transcript-width, 680px);
+}
+:root [class*="messagesContainer_"] {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+:root [class*="messagesContainer_"] > * {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--claude-host-transcript-width, 680px);
+  margin-left: auto;
+  margin-right: auto;
+}
