@@ -23,6 +23,7 @@ type projectWatcher struct {
 	dirty    bool
 	err      error
 	metadata map[string]bool
+	observe  func(fsnotify.Event, bool, bool, bool)
 }
 
 func newProjectWatcher(invalidate func()) (*projectWatcher, error) {
@@ -74,8 +75,13 @@ func (w *projectWatcher) run(invalidate func()) {
 			w.mu.Lock()
 			metadata := w.metadata[filepath.Dir(event.Name)]
 			metadataDirectory, watchedDirectory := w.metadata[event.Name]
+			observe := w.observe
 			w.mu.Unlock()
-			if ignoredGitWatchEvent(event, metadata, metadataDirectory) {
+			ignored := ignoredGitWatchEvent(event, metadata, metadataDirectory)
+			if observe != nil {
+				observe(event, metadata, metadataDirectory, ignored)
+			}
+			if ignored {
 				continue
 			}
 			if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Remove) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Chmod) {

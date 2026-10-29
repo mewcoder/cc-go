@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -182,12 +183,30 @@ func TestGitWatchNewDirectoriesIgnoreRuleChangesAndIndexLocks(t *testing.T) {
 	write("ignored/nested/file", "ignored\n")
 	var cache projectCache
 	t.Cleanup(cache.close)
+	watcher, err := newProjectWatcher(cache.invalidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan string, 100)
+	watcher.mu.Lock()
+	watcher.observe = func(event fsnotify.Event, metadata, selfGit, ignored bool) {
+		select {
+		case events <- fmt.Sprintf("%s %q parentGit=%v selfGit=%v ignored=%v", event.Op, event.Name, metadata, selfGit, ignored):
+		default:
+		}
+	}
+	watcher.mu.Unlock()
+	cache.watcher, cache.watchPath = watcher, root
 	cache.get(root)
 	before := cache.revision()
 	write(".git/index.lock", "lock")
 	time.Sleep(1300 * time.Millisecond)
 	if cache.revision() != before {
-		t.Fatal("Git index lock must not trigger status")
+		var observed []string
+		for len(events) > 0 {
+			observed = append(observed, <-events)
+		}
+		t.Fatalf("Git index lock must not trigger status: warning=%s watches=%q events=%q", watcher.warning(), watcher.fs.WatchList(), observed)
 	}
 	write("new/deep/file", "new\n")
 	waitWatchRevision(t, &cache, before)
