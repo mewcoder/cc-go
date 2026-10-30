@@ -67,7 +67,7 @@ func (a *App) snapshot() map[string]any {
 	if time.Since(a.downloadAt) > 2*time.Second {
 		setup["bytesPerSecond"] = float64(0)
 	}
-	setup["canCancel"] = a.downloadCancel != nil && a.setupStatus == "downloading"
+	setup["canCancel"] = a.downloadCancel != nil && (a.setupStatus == "downloading" || a.setupStatus == "checking-installed")
 	a.mu.Unlock()
 	result["project"] = a.project.cached(workspace)
 	result["projectRevision"] = a.project.revision()

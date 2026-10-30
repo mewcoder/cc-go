@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"compress/flate"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Installed directories are executable code trusted by the current user, just
@@ -23,7 +26,10 @@ type Installed struct {
 }
 
 func VSCodeExtensionDirectories(home, portable string) []string {
-	roots := []string{filepath.Join(home, ".vscode", "extensions"), filepath.Join(home, ".vscode-insiders", "extensions")}
+	var roots []string
+	if home != "" {
+		roots = append(roots, filepath.Join(home, ".vscode", "extensions"), filepath.Join(home, ".vscode-insiders", "extensions"))
+	}
 	if filepath.IsAbs(portable) {
 		roots = append([]string{filepath.Join(portable, "extensions")}, roots...)
 	}
@@ -35,19 +41,23 @@ func VSCodeExtensionDirectories(home, portable string) []string {
 func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platform string) (Installed, error) {
 	type candidate struct{ directory, version string }
 	var candidates []candidate
+	var failures []error
 	for _, root := range roots {
 		if err := ctx.Err(); err != nil {
 			return Installed{}, err
 		}
-		obsolete := make(map[string]bool)
-		if b, err := os.ReadFile(filepath.Join(root, ".obsolete")); err == nil {
-			if len(b) > 1<<20 || json.Unmarshal(b, &obsolete) != nil {
-				continue
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				failures = append(failures, fmt.Errorf("read VS Code extensions directory: %w", err))
 			}
-		} else if !os.IsNotExist(err) {
 			continue
 		}
-		entries, _ := os.ReadDir(root)
+		obsolete, err := readObsolete(ctx, filepath.Join(root, ".obsolete"))
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
 				return Installed{}, err
@@ -71,7 +81,6 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return NewerVersion(candidates[i].version, candidates[j].version) })
-	var failures []error
 	for _, item := range candidates {
 		if err := ctx.Err(); err != nil {
 			return Installed{}, err
@@ -85,7 +94,7 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 			failures = append(failures, err)
 			continue
 		}
-		prepared, err := Prepare(archive, cache, platform, item.version)
+		prepared, err := prepare(ctx, archive, cache, platform, item.version)
 		if err == nil {
 			_, err = BundledRuntime(prepared.ExtensionPath, platform)
 		}
@@ -102,6 +111,50 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 		return Installed{}, err
 	}
 	return Installed{}, errors.Join(failures...)
+}
+
+func readObsolete(ctx context.Context, filename string) (map[string]bool, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		obsolete := make(map[string]bool)
+		file, err := os.Open(filename)
+		if os.IsNotExist(err) {
+			return obsolete, nil
+		}
+		if err == nil {
+			var b []byte
+			b, err = io.ReadAll(io.LimitReader(file, (1<<20)+1))
+			closeErr := file.Close()
+			if err == nil {
+				err = closeErr
+			}
+			if err == nil && len(b) > 1<<20 {
+				err = errors.New("obsolete list exceeds 1 MiB")
+			}
+			if err == nil {
+				err = json.Unmarshal(b, &obsolete)
+			}
+		}
+		if err == nil {
+			return obsolete, nil
+		}
+		lastErr = err
+		if attempt < 2 {
+			// VS Code may be replacing this file. Retry briefly, but never treat an
+			// unreadable list as empty and accidentally revive an obsolete plugin.
+			timer := time.NewTimer(50 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return nil, fmt.Errorf("read VS Code obsolete list %s: %w", filename, lastErr)
 }
 
 // Check existing ancestors too: the data directory may not exist yet, or its
@@ -139,18 +192,6 @@ func privateImportDirectories(source string, destinations ...string) error {
 	return nil
 }
 
-type installedReader struct {
-	ctx context.Context
-	io.Reader
-}
-
-func (r installedReader) Read(b []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.Reader.Read(b)
-}
-
 func snapshotInstalled(ctx context.Context, source, archives string) (string, error) {
 	root, err := os.OpenRoot(source)
 	if err != nil {
@@ -166,7 +207,8 @@ func snapshotInstalled(ctx context.Context, source, archives string) (string, er
 	}
 	defer os.Remove(file.Name())
 	defer file.Close()
-	writer := zip.NewWriter(file)
+	hash := sha256.New()
+	writer := zip.NewWriter(io.MultiWriter(file, hash))
 	writer.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) { return flate.NewWriter(w, flate.BestSpeed) })
 	var total int64
 	var count int
@@ -219,7 +261,7 @@ func snapshotInstalled(ctx context.Context, source, archives string) (string, er
 		if err != nil {
 			return err
 		}
-		n, copyErr := io.Copy(output, installedReader{ctx, io.LimitReader(input, info.Size()+1)})
+		n, copyErr := io.Copy(output, contextReader{ctx, io.LimitReader(input, info.Size()+1)})
 		closeErr := input.Close()
 		if copyErr != nil {
 			return copyErr
@@ -247,20 +289,23 @@ func snapshotInstalled(ctx context.Context, source, archives string) (string, er
 		return "", err
 	}
 	info, err := os.Stat(file.Name())
-	if err != nil || info.Size() > MaxArchive {
+	if err != nil {
+		return "", fmt.Errorf("stat installed extension archive: %w", err)
+	}
+	if info.Size() > MaxArchive {
 		return "", errors.New("installed extension archive exceeds import limits")
 	}
-	digest, err := fileHash(file.Name())
-	if err != nil {
-		return "", err
-	}
+	digest := hex.EncodeToString(hash.Sum(nil))
 	destination := filepath.Join(archives, "vscode-"+digest+".vsix")
 	if info, err := os.Lstat(destination); err == nil {
 		if !info.Mode().IsRegular() {
 			return "", errors.New("unsafe installed extension archive cache")
 		}
-		existing, err := fileHash(destination)
-		if err != nil || existing != digest {
+		existing, err := fileHashContext(ctx, destination)
+		if err != nil {
+			return "", err
+		}
+		if existing != digest {
 			return "", errors.New("installed extension archive cache altered")
 		}
 		return destination, nil

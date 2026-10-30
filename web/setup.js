@@ -13,6 +13,7 @@
     const error = setup.nodeError || setup.error || '';
     const pluginReady = Boolean(setup.readyVersion || state.extension?.version);
     const runtimeReady = Boolean(setup.runtimeReady);
+    const localReuse = setup.source === 'vscode' && pluginReady && runtimeReady && !busy && !error;
     const received = Math.max(0, Number(setup.received) || 0);
     const total = Math.max(0, Number(setup.total) || 0);
     const size = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -31,14 +32,14 @@
         description: [system, !nodeReady && 'Node.js 22+'].filter(Boolean).join(' · ') },
       { kind: nodeReady && step === 1 && busy ? 'busy' : pluginReady && runtimeReady ? 'ready' : 'waiting',
         label: status === 'downloading' ? setup.verifying ? 'Verifying' : 'Downloading' : nodeReady && step === 1 && busy ? 'Preparing' : pluginReady && runtimeReady ? 'Ready' : 'Pending',
-        description: setup.source === 'vscode' && pluginReady && runtimeReady && !busy ? 'From VS Code' : '',
+        description: localReuse ? 'From VS Code' : '',
         version: status === 'downloading' ? setup.targetVersion || '' : setup.readyVersion || state.extension?.version || '' },
     ];
     if (error) {
       const failed = !nodeReady ? 0 : 1;
       cards[failed] = { ...cards[failed], kind: 'error', label: 'Error', error };
     }
-    return { cards, busy, busyLabel, error, nodeReady, step, pluginReady, runtimeReady, progressText, received, total };
+    return { cards, busy, busyLabel, error, nodeReady, step, pluginReady, runtimeReady, localReuse, progressText, received, total };
 
   }
 
@@ -160,7 +161,7 @@
   cards[1].actions.append(update);
   const cancel = create('button', '', 'Cancel');
   cancel.type = 'button';
-  cancel.setAttribute('aria-label', 'Cancel download');
+  cancel.setAttribute('aria-label', 'Cancel operation');
   cancel.onclick = async () => {
     if (cancel.disabled) return;
     cancel.disabled = true;
@@ -248,7 +249,7 @@
       card.error.hidden = !error;
     });
     cards[0].version.title = setup.nodePath || '';
-    cards[1].row.querySelector('.setup-plugin-link').hidden = setup.source === 'vscode';
+    cards[1].row.querySelector('.setup-plugin-link').hidden = view.localReuse;
     retry.hidden = view.nodeReady;
     $('setup-select-cli').hidden = true;
     install.hidden = true;

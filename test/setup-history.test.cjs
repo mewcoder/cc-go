@@ -341,6 +341,33 @@ test('local reuse shows its source beside the version and hides the download lin
   assert.equal(link.hidden, false);
 });
 
+test('failed local reuse restores the download link even with a saved VS Code source', () => {
+  const h = setupHarness();
+  Object.assign(h.state.pluginSetup, { source: 'vscode', status: 'error', readyVersion: '', runtimeReady: false, error: 'Invalid VSIX' });
+  h.render();
+  const card = h.byID('setup-steps').children[1];
+  assert.equal(card.querySelector('.setup-plugin-link').hidden, false);
+  assert.equal(card.querySelector('.setup-card-description').hidden, true);
+  assert.equal(h.byID('setup-import').hidden, false);
+  assert.equal(card.querySelector('.setup-step-error').textContent, 'Invalid VSIX');
+});
+
+test('local import can be cancelled without enabling concurrent retry or import', async () => {
+  const h = setupHarness();
+  Object.assign(h.state.pluginSetup, { status: 'checking-installed', readyVersion: '', runtimeReady: false, step: 1, canCancel: true });
+  h.render();
+  const actions = h.byID('setup-steps').children[1].querySelector('.setup-actions');
+  const cancel = actions.children.find(child => child.textContent === 'Cancel');
+  const update = actions.children.at(-1);
+  assert.equal(cancel.hidden, false);
+  assert.equal(cancel.disabled, false);
+  assert.equal(update.textContent, 'Checking VS Code…');
+  assert.equal(update.disabled, true);
+  assert.equal(h.byID('setup-import').hidden, true);
+  await cancel.onclick();
+  assert.deepEqual(h.calls, ['cancel-download']);
+});
+
 test('initial setup shows ready status instead of update controls or update messages', () => {
   const h = setupHarness();
   Object.assign(h.state.pluginSetup, { latestVersion: '2.1.312' });

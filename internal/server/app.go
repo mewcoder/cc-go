@@ -151,10 +151,7 @@ func randomToken() string {
 func New(cfg Config) (*App, error) {
 	var err error
 	if cfg.VSCodeExtensionsDirs == nil {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
+		home, _ := os.UserHomeDir()
 		cfg.VSCodeExtensionsDirs = plugin.VSCodeExtensionDirectories(home, os.Getenv("VSCODE_PORTABLE"))
 	}
 	if cfg.DevAssets != "" {
@@ -441,10 +438,10 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	expectedVersion := ""
 	var prepared *plugin.Prepared
 	if archive == "" {
-		a.mu.Lock()
-		a.setupStatus, a.label = "checking-installed", "Checking installed VS Code extension"
-		a.mu.Unlock()
-		installed, err := plugin.ReuseInstalled(ctx, a.cfg.VSCodeExtensionsDirs, filepath.Join(a.cfg.DataDir, "vsix"), filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform())
+		installed, err := a.reuseInstalled(ctx)
+		if errors.Is(err, errDownloadCancelled) {
+			return err
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -495,6 +492,25 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	}
 	a.mu.Unlock()
 	return err
+}
+
+func (a *App) reuseInstalled(ctx context.Context) (plugin.Installed, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	a.mu.Lock()
+	a.setupStatus, a.label = "checking-installed", "Checking installed VS Code extension"
+	// The existing cancellation endpoint also covers local snapshot/extraction.
+	a.downloadCancel = cancel
+	a.mu.Unlock()
+	installed, err := plugin.ReuseInstalled(ctx, a.cfg.VSCodeExtensionsDirs, filepath.Join(a.cfg.DataDir, "vsix"), filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform())
+	a.mu.Lock()
+	cause := context.Cause(ctx)
+	a.downloadCancel = nil
+	a.mu.Unlock()
+	if cause != nil {
+		return plugin.Installed{}, cause
+	}
+	return installed, err
 }
 
 func (a *App) reloadPlugin(ctx context.Context, archive string) error {

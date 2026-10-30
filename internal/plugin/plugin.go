@@ -171,14 +171,33 @@ func Download(ctx context.Context, directory, version, platform string, report f
 }
 
 func fileHash(filename string) (string, error) {
+	return fileHashContext(context.Background(), filename)
+}
+
+func fileHashContext(ctx context.Context, filename string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	_, err = io.Copy(h, f)
+	_, err = io.Copy(h, contextReader{ctx, f})
 	return hex.EncodeToString(h.Sum(nil)), err
+}
+
+type contextReader struct {
+	ctx context.Context
+	io.Reader
+}
+
+func (r contextReader) Read(b []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(b)
 }
 
 type receiptEntry struct {
@@ -189,6 +208,13 @@ type receiptEntry struct {
 // Prepare extracts only into a fresh private directory and verifies reused cache files.
 // A VS Code extension (.vsix) is trusted executable code, not a sandboxed document.
 func Prepare(archive, directory, platform, version string) (*Prepared, error) {
+	return prepare(context.Background(), archive, directory, platform, version)
+}
+
+func prepare(ctx context.Context, archive, directory, platform, version string) (*Prepared, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	stat, err := os.Stat(archive)
 	if err != nil {
 		return nil, err
@@ -196,7 +222,7 @@ func Prepare(archive, directory, platform, version string) (*Prepared, error) {
 	if !stat.Mode().IsRegular() || stat.Size() > MaxArchive {
 		return nil, errors.New("invalid or oversized VS Code extension (.vsix)")
 	}
-	digest, err := fileHash(archive)
+	digest, err := fileHashContext(ctx, archive)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +231,7 @@ func Prepare(archive, directory, platform, version string) (*Prepared, error) {
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, errors.New("unsafe extension cache")
 		}
-		if err := verifyReceipt(root); err != nil {
+		if err := verifyReceipt(ctx, root); err != nil {
 			return nil, fmt.Errorf("extension cache altered (remove it to re-extract): %w", err)
 		}
 		return validate(root, platform, version)
@@ -232,6 +258,9 @@ func Prepare(archive, directory, platform, version string) (*Prepared, error) {
 	var total uint64
 	var receipt []receiptEntry
 	for _, entry := range z.File {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		name, err := safeName(entry.Name)
 		if err != nil {
 			return nil, err
@@ -263,10 +292,10 @@ func Prepare(archive, directory, platform, version string) (*Prepared, error) {
 		if mode&0111 != 0 {
 			perm = 0700
 		}
-		if err := extractFile(entry, filename, perm); err != nil {
+		if err := extractFile(ctx, entry, filename, perm); err != nil {
 			return nil, err
 		}
-		hash, err := fileHash(filename)
+		hash, err := fileHashContext(ctx, filename)
 		if err != nil {
 			return nil, err
 		}
@@ -277,6 +306,9 @@ func Prepare(archive, directory, platform, version string) (*Prepared, error) {
 	}
 	b, _ := json.Marshal(receipt)
 	if err := os.WriteFile(filepath.Join(tmp, ".receipt.json"), b, 0600); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := os.Rename(tmp, root); err != nil {
@@ -293,7 +325,7 @@ func safeName(name string) (string, error) {
 	return name, nil
 }
 
-func extractFile(entry *zip.File, filename string, mode os.FileMode) error {
+func extractFile(ctx context.Context, entry *zip.File, filename string, mode os.FileMode) error {
 	in, err := entry.Open()
 	if err != nil {
 		return err
@@ -303,7 +335,7 @@ func extractFile(entry *zip.File, filename string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(out, io.LimitReader(in, int64(entry.UncompressedSize64)+1))
+	n, err := io.Copy(out, contextReader{ctx, io.LimitReader(in, int64(entry.UncompressedSize64)+1)})
 	closeErr := out.Close()
 	if err != nil {
 		return err
@@ -330,7 +362,7 @@ func inside(root, name string) (string, error) {
 	return real, nil
 }
 
-func verifyReceipt(root string) error {
+func verifyReceipt(ctx context.Context, root string) error {
 	r, err := inside(root, ".receipt.json")
 	if err != nil {
 		return err
@@ -345,6 +377,9 @@ func verifyReceipt(root string) error {
 	}
 	listed := make(map[string]bool)
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		name, err := safeName(entry.Path)
 		if err != nil {
 			return err
@@ -357,8 +392,11 @@ func verifyReceipt(root string) error {
 		if err != nil {
 			return err
 		}
-		hash, err := fileHash(filename)
-		if err != nil || hash != entry.Hash {
+		hash, err := fileHashContext(ctx, filename)
+		if err != nil {
+			return err
+		}
+		if hash != entry.Hash {
 			return fmt.Errorf("changed cached file: %s", name)
 		}
 	}
@@ -366,6 +404,9 @@ func verifyReceipt(root string) error {
 		return errors.New("cache receipt is missing extension manifests")
 	}
 	return filepath.WalkDir(root, func(filename string, entry os.DirEntry, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return err
 		}
