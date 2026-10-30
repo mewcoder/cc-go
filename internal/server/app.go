@@ -28,6 +28,7 @@ import (
 type Config struct {
 	DataDir, Workspace, VSIX, Node, ModulesDir, ProjectsDir string
 	DevAssets                                               string
+	VSCodeExtensionsDirs                                    []string
 }
 
 type Native struct {
@@ -148,6 +149,13 @@ func randomToken() string {
 
 func New(cfg Config) (*App, error) {
 	var err error
+	if cfg.VSCodeExtensionsDirs == nil {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		cfg.VSCodeExtensionsDirs = plugin.VSCodeExtensionDirectories(home, os.Getenv("VSCODE_PORTABLE"))
+	}
 	if cfg.DevAssets != "" {
 		cfg.DevAssets, err = filepath.Abs(cfg.DevAssets)
 		if err != nil {
@@ -425,6 +433,23 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 		}
 	}
 	expectedVersion := ""
+	var prepared *plugin.Prepared
+	if archive == "" {
+		a.mu.Lock()
+		a.label = "Checking installed VS Code extension"
+		a.mu.Unlock()
+		installed, err := plugin.ReuseInstalled(ctx, a.cfg.VSCodeExtensionsDirs, filepath.Join(a.cfg.DataDir, "vsix"), filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform())
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			a.Log("warning", "Could not reuse installed VS Code extension; falling back to download: "+err.Error())
+		}
+		archive, prepared = installed.Archive, installed.Prepared
+		if prepared != nil {
+			a.Log("info", "Reusing installed VS Code extension: Claude Code "+fmt.Sprint(prepared.PackageJSON["version"]))
+		}
+	}
 	if archive == "" {
 		download, err := a.downloadVSIX(ctx, "latest")
 		if err != nil {
@@ -436,9 +461,11 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	a.mu.Lock()
 	a.setupStatus, a.setupStep = "extracting", 1
 	a.mu.Unlock()
-	prepared, err := plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), expectedVersion)
-	if err != nil {
-		return err
+	if prepared == nil {
+		prepared, err = plugin.Prepare(archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), expectedVersion)
+		if err != nil {
+			return err
+		}
 	}
 	a.mu.Lock()
 	a.version = fmt.Sprint(prepared.PackageJSON["version"])

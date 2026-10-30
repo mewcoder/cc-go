@@ -23,7 +23,7 @@ func main() {
 	var web bool
 	flag.StringVar(&cfg.DataDir, "data-dir", filepath.Join(home, ".cc-go"), "Independent application data directory")
 	flag.StringVar(&cfg.Workspace, "workspace", "", "Initial project directory (defaults to the last workspace)")
-	flag.StringVar(&cfg.VSIX, "vsix", "", "Trusted local Anthropic Claude Code VS Code extension (.vsix); otherwise download the latest stable platform version")
+	flag.StringVar(&cfg.VSIX, "vsix", "", "Trusted local Claude VSIX; otherwise reuse the saved or installed VS Code extension before downloading")
 	flag.StringVar(&cfg.Node, "node", "", "Node.js executable")
 	flag.StringVar(&cfg.ModulesDir, "node-modules", "", "Optional additional npm module search directory (host dependencies are embedded)")
 	flag.StringVar(&cfg.ProjectsDir, "projects-dir", filepath.Join(home, ".claude", "projects"), "Read-only Claude transcript directory")

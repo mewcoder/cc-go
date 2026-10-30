@@ -71,7 +71,7 @@ func TestNodeProbeDoesNotRunSystemClaude(t *testing.T) {
 
 func testApp(t *testing.T) *App {
 	t.Helper()
-	a, err := New(Config{DataDir: t.TempDir(), Workspace: t.TempDir(), ProjectsDir: t.TempDir()})
+	a, err := New(Config{DataDir: t.TempDir(), Workspace: t.TempDir(), ProjectsDir: t.TempDir(), VSCodeExtensionsDirs: []string{}})
 	if err != nil {
 		t.Fatal(err)
 	}

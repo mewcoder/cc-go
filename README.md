@@ -18,10 +18,12 @@
 首次使用：
 
 1. 安装 [Node.js 22 或更新版本](https://nodejs.org/)。Windows 还需要 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
-2. 启动 CC Go，等待下载当前平台最新稳定版 Claude VSIX，或手动导入可信的官方 VSIX。
+2. 启动 CC Go，优先复用 VS Code 已安装的稳定版 Claude 插件；没有可用的本地插件时下载当前平台最新稳定版，也可以手动导入可信的官方 VSIX。
 3. 检查通过后，点击 **Start**，在插件中完成配置。
 
 **不需要另装 Claude CLI**：使用 VSIX 自带的 Claude。首次初始化后，再次启动直接进入应用；在菜单的 Plugin Updates 中检查和安装插件更新。插件更新与 CC Go 自身的版本分开，桌面程序更新请从 Releases 下载。
+
+本地复用会检查标准 VS Code、Insiders 及 `VSCODE_PORTABLE` 数据目录中的插件，校验身份、平台和内置运行时后导入 CC Go 自己的副本，不修改 VS Code 的安装。之后继续使用已保存的副本，不受 VS Code 升级或卸载影响；显式指定的 `--vsix` 优先。
 
 ## 日常使用
 

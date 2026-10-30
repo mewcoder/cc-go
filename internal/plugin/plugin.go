@@ -392,7 +392,11 @@ func validate(root, platform, version string) (*Prepared, error) {
 	if err != nil {
 		return nil, err
 	}
-	filename := filepath.Join(root, "extension", "package.json")
+	return validateExtension(filepath.Join(root, "extension"), filepath.Join(root, "extension.vsixmanifest"), platform, version)
+}
+
+func validateExtension(extensionPath, platformManifest, platform, version string) (*Prepared, error) {
+	filename := filepath.Join(extensionPath, "package.json")
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -416,7 +420,6 @@ func validate(root, platform, version string) (*Prepared, error) {
 	if !ok || main == "" || strings.ContainsAny(main, "\\:\x00") || path.IsAbs(main) {
 		return nil, errors.New("invalid extension entry point")
 	}
-	extensionPath := filepath.Join(root, "extension")
 	entry, err := inside(extensionPath, main)
 	if err != nil {
 		return nil, err
@@ -424,7 +427,7 @@ func validate(root, platform, version string) (*Prepared, error) {
 	if stat, err := os.Stat(entry); err != nil || !stat.Mode().IsRegular() {
 		return nil, errors.New("invalid extension entry point")
 	}
-	x, err := os.ReadFile(filepath.Join(root, "extension.vsixmanifest"))
+	x, err := os.ReadFile(platformManifest)
 	if err != nil || len(x) > 1<<20 {
 		return nil, errors.New("missing VS Code extension (.vsix) platform manifest")
 	}
