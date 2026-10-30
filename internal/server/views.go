@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -17,11 +18,13 @@ import (
 	"time"
 
 	runtimefiles "cc-go/runtime"
+
+	"golang.org/x/net/websocket"
 )
 
 type viewMessage struct {
-	Sequence int64
-	Data     json.RawMessage
+	Sequence int64           `json:"sequence"`
+	Data     json.RawMessage `json:"data"`
 }
 
 type View struct {
@@ -141,7 +144,7 @@ func (a *App) ViewHandler() http.Handler {
 			}
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			b, _ := a.readWebFile("bridge.js")
-			prefix, _ := json.Marshal(map[string]any{"base": base, "state": state, "theme": theme, "transcriptWidth": transcriptWidth})
+			prefix, _ := json.Marshal(map[string]any{"base": base, "state": state, "theme": theme, "transcriptWidth": transcriptWidth, "shellOrigin": a.ShellURL})
 			_, _ = fmt.Fprintf(w, "const __claudeBridge = %s;\n", prefix)
 			_, _ = w.Write(b)
 		case "theme.css":
@@ -162,6 +165,12 @@ func (a *App) ViewHandler() http.Handler {
 				return
 			}
 			a.viewEvents(w, r, view)
+		case "socket":
+			if r.Method != "GET" || r.Header.Get("Origin") != a.ViewURL {
+				http.Error(w, "Forbidden", 403)
+				return
+			}
+			a.viewSocket(w, r, view)
 		case "message", "state", "external":
 			if r.Method != "POST" || r.Header.Get("Origin") != a.ViewURL {
 				http.Error(w, "Forbidden", 403)
@@ -215,6 +224,7 @@ var cspContentPattern = regexp.MustCompile(`(?i)content="([^"]*)"`)
 func injectBridge(html, base string) string {
 	// A VS Code webview transports messages outside the page's fetch policy.
 	// Our replacement uses HTTP, so permit only this view's bridge endpoints.
+	connectSources := base + " " + strings.Replace(base, "http", "ws", 1)
 	html = cspMetaPattern.ReplaceAllStringFunc(html, func(meta string) string {
 		return cspContentPattern.ReplaceAllStringFunc(meta, func(content string) string {
 			policy := cspContentPattern.FindStringSubmatch(content)[1]
@@ -224,11 +234,11 @@ func injectBridge(html, base string) string {
 				fields := strings.Fields(directive)
 				if len(fields) > 0 && strings.EqualFold(fields[0], "connect-src") {
 					found = true
-					directives[i] = strings.ReplaceAll(directive, "'none'", "") + " " + base
+					directives[i] = strings.ReplaceAll(directive, "'none'", "") + " " + connectSources
 				}
 			}
 			if !found {
-				directives = append(directives, "connect-src "+base)
+				directives = append(directives, "connect-src "+connectSources)
 			}
 			return `content="` + strings.Join(directives, ";") + `"`
 		})
@@ -291,6 +301,57 @@ func (a *App) viewEvents(w http.ResponseWriter, r *http.Request, view *View) {
 	}
 	_, _ = fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
+	streamViewMessages(r.Context(), view, since, func(msg viewMessage) error {
+		_, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", msg.Sequence, msg.Data)
+		flusher.Flush()
+		return err
+	}, func() error {
+		_, err := fmt.Fprint(w, ": ping\n\n")
+		flusher.Flush()
+		return err
+	})
+}
+
+func (a *App) viewSocket(w http.ResponseWriter, r *http.Request, view *View) {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		http.Error(w, "WebSocket upgrade required", 400)
+		return
+	}
+	// Upgraded sockets do not consume the browser's six HTTP/1 connections.
+	// Each view keeps its token and exact Origin checks.
+	server := websocket.Server{
+		Handshake: func(_ *websocket.Config, request *http.Request) error {
+			if request.Header.Get("Origin") != a.ViewURL {
+				return errors.New("forbidden origin")
+			}
+			return nil
+		},
+		Handler: func(conn *websocket.Conn) {
+			defer conn.Close()
+			conn.MaxPayloadBytes = 1024
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			go func() {
+				// This is receive-only. A read also detects the client closing.
+				var ignored string
+				_ = websocket.Message.Receive(conn, &ignored)
+				cancel()
+			}()
+			send := func(value any) error {
+				if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+					return err
+				}
+				return websocket.JSON.Send(conn, value)
+			}
+			since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+			streamViewMessages(ctx, view, since, func(msg viewMessage) error { return send(msg) },
+				func() error { return send(map[string]bool{"ping": true}) })
+		},
+	}
+	server.ServeHTTP(w, r)
+}
+
+func streamViewMessages(ctx context.Context, view *View, since int64, send func(viewMessage) error, heartbeat func() error) {
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()
 	for {
@@ -303,13 +364,12 @@ func (a *App) viewEvents(w http.ResponseWriter, r *http.Request, view *View) {
 		}
 		view.mu.Unlock()
 		for _, msg := range batch {
-			if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", msg.Sequence, msg.Data); err != nil {
+			if err := send(msg); err != nil {
 				return
 			}
 			since = msg.Sequence
 		}
 		if len(batch) > 0 {
-			flusher.Flush()
 			// The extension rehydrates a freshly loaded page. Keep only unacknowledged
 			// messages plus a small reconnect window, not an entire conversation.
 			view.mu.Lock()
@@ -320,16 +380,15 @@ func (a *App) viewEvents(w http.ResponseWriter, r *http.Request, view *View) {
 			view.mu.Unlock()
 		}
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case <-view.done:
 			return
 		case <-view.wake:
 		case <-ping.C:
-			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+			if err := heartbeat(); err != nil {
 				return
 			}
-			flusher.Flush()
 		}
 	}
 }

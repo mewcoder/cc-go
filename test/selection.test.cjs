@@ -48,6 +48,17 @@ test('project picker lists current projects safely, filters them and selects int
   assert.equal(h.dialog.open, false);
 });
 
+test('project picker formats drive displays but selects the unmodified path', async () => {
+  const h = fixture({ formatPath: value => value.replace(/^d:/, 'D:') });
+  const raw = 'd:\\Code\\MyProject';
+  h.state.workspaces = [{ name: 'd:', path: raw }];
+  await h.open('project');
+  assert.equal(h.list.children[0].children[0].textContent, 'D:');
+  assert.equal(h.list.children[0].title, 'D:\\Code\\MyProject');
+  await h.list.children[0].handlers.click();
+  assert.equal(h.calls[0][1].path, raw);
+});
+
 test('branch picker keeps dirty warning compact and disables unsafe switches', async () => {
   const h = fixture({ request: async () => ({ current: 'main', branches: ['main', 'feature/test'], dirty: true, files: 95, untracked: 95 }) });
   await h.open('branch');

@@ -9,7 +9,7 @@
     return `${changed} changed \u00b7 ${untracked} untracked files`;
   }
 
-  function create(document, { request, invoke }) {
+  function create(document, { request, invoke, formatPath = value => value }) {
     const dialog = document.createElement('dialog');
     dialog.className = 'hud-picker';
     const filter = document.createElement('input');
@@ -137,7 +137,7 @@
         status.title = '';
         choices = [];
         if (kind === 'project') {
-          choices = (state.workspaces || []).map(project => ({ name: project.name, detail: project.path,
+          choices = (state.workspaces || []).map(project => ({ name: formatPath(project.name), detail: formatPath(project.path),
             value: project.path, current: project.path === state.workspace }));
           choices.push({ name: 'Open folder\u2026', value: '', browse: true });
         }

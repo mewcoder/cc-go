@@ -13,10 +13,6 @@ func (a *App) snapshot() map[string]any {
 	a.mu.Lock()
 	workspace, theme := a.state.Workspace, a.state.Theme
 	paths := append([]string(nil), a.state.Workspaces...)
-	usedAt := make(map[string]int64, len(paths))
-	for _, path := range paths {
-		usedAt[path] = a.state.WorkspaceUsedAt[path]
-	}
 	metadata := make(map[string]sessions.Metadata, len(a.state.Metadata))
 	for k, v := range a.state.Metadata {
 		metadata[k] = v
@@ -25,12 +21,22 @@ func (a *App) snapshot() map[string]any {
 	for key, value := range a.liveSessions {
 		live[key] = value
 	}
+	busyViews := make(map[string]bool)
+	for _, session := range live {
+		if session.Status == "working" || session.Status == "needs_input" {
+			busyViews[session.ViewID] = true
+		}
+	}
 	views := make([]map[string]any, 0, len(a.views))
 	for _, view := range a.views {
+		view.mu.Lock()
+		sequence := view.sequence
+		view.mu.Unlock()
 		views = append(views, map[string]any{
 			"id": view.ID, "title": view.Title, "active": view.ID == a.active,
 			"url":      a.ViewURL + "/view/" + view.ID + "/" + view.Token + "/index.html",
 			"revision": view.Revision, "ready": view.HTML != "",
+			"sequence": sequence, "busy": view.PendingInput || busyViews[view.ID],
 		})
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i]["id"].(string) < views[j]["id"].(string) })
@@ -85,7 +91,6 @@ func (a *App) snapshot() map[string]any {
 		copy(items, cached.Items)
 		for i := range items {
 			meta := metadata[sessions.Key(p, items[i].ID)]
-			usedAt[p] = max(usedAt[p], items[i].UpdatedAt, meta.ReadAt)
 			if meta.Title != "" {
 				items[i].Title = meta.Title
 			}
@@ -106,9 +111,6 @@ func (a *App) snapshot() map[string]any {
 		workspaces = append(workspaces, map[string]any{"path": p, "name": filepath.Base(p), "active": p == workspace, "sessions": visible})
 	}
 	a.sessionMu.Unlock()
-	sort.SliceStable(workspaces, func(i, j int) bool {
-		return usedAt[workspaces[i]["path"].(string)] > usedAt[workspaces[j]["path"].(string)]
-	})
 	result["workspaces"] = workspaces
 	result["archivedSessions"] = archived
 	return result

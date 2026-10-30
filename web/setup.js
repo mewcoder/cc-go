@@ -248,7 +248,7 @@
       text(card.error, error);
       card.error.hidden = !error;
     });
-    cards[0].version.title = setup.nodePath || '';
+    cards[0].version.title = window.desktop?.formatPath?.(setup.nodePath || '') ?? setup.nodePath ?? '';
     cards[1].row.querySelector('.setup-plugin-link').hidden = view.localReuse;
     retry.hidden = view.nodeReady;
     $('setup-select-cli').hidden = true;

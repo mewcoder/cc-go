@@ -39,6 +39,16 @@ test('HUD combines context and cache while preserving the selected metrics', () 
   assert.match(data.context.title, /total input: 80,000/);
 });
 
+test('HUD formats project path displays without mutating workspace identity', () => {
+  const raw = 'd:\\Code\\MyProject';
+  const input = state({ workspace: raw, project: { name: 'd:', path: raw } });
+  const data = hud.describe(input, value => value.replace(/^d:/, 'D:'));
+  assert.equal(data.project.text, 'D:');
+  assert.equal(data.project.title, 'D:\\Code\\MyProject');
+  assert.equal(input.workspace, raw);
+  assert.equal(input.project.path, raw);
+});
+
 test('window provenance stays in the tooltip without restoring the Context text label', () => {
   for (const [source, description] of [['native', /native context query/], ['sdk', /SDK model usage/]]) {
     const data = hud.describe(state({ sessionMetrics: { ...state().sessionMetrics, contextWindowSource: source } }));

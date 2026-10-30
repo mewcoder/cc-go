@@ -22,8 +22,24 @@ test('tray restores on left click and exposes its menu only on right click', () 
   assert.match(tray, /Label: "Show".*show\(\)/);
   assert.match(tray, /Label: "Exit".*app\.Quit\(\)/);
   assert.match(tray, /tray\.OnClick\(show\)/);
-  assert.match(tray, /tray\.OnRightClick\(func\(\) \{ menu\.Popup\(nil\) \}\)/);
+  assert.match(tray, /tray\.OnRightClick\(func\(\) \{ popupTrayMenu\(window, menu\) \}\)/);
   assert.doesNotMatch(tray, /tray\.SetMenu|Menu: menu/);
+});
+
+test('only Windows tray menus bypass owner drawing and keep native sizing', () => {
+  const windows = read('internal/desktop/tray_menu_windows.go');
+  const other = read('internal/desktop/tray_menu_other.go');
+  assert.match(windows, /^\/\/go:build windows && !headless/m);
+  assert.match(other, /^\/\/go:build !windows && !headless/m);
+  assert.match(other, /menu\.Popup\(nil\)/);
+  for (const api of ['CreatePopupMenu', 'AppendMenuW', 'DestroyMenu', 'GetCursorPos', 'TrackPopupMenuEx']) {
+    assert.ok(windows.includes(`NewProc("${api}")`), api);
+  }
+  assert.match(windows, /trayAppendMenu\.Call\(menu, 0, uintptr\(i\+1\)/);
+  assert.match(windows, /defer trayDestroyMenu\.Call\(menu\)/);
+  assert.match(windows, /selected > 0 && selected <= len\(items\)/);
+  assert.match(windows, /item\.Click\(item, window\)/);
+  assert.doesNotMatch(windows, /menu\.Popup|MFT_OWNERDRAW|SetWindowPos|\.Show\(|\.Restore\(/);
 });
 
 test('tray menu contains only Show and Exit', () => {

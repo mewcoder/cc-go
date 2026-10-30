@@ -48,7 +48,7 @@
   dialog.id = 'history-dialog';
   dialog.setAttribute('aria-labelledby', 'history-title');
   const header = create('header', 'history-header');
-  const title = create('h1', '', '导入 Claude Code CLI sessions');
+  const title = create('h1', '', 'Import Claude Code CLI sessions');
   title.id = 'history-title';
   const close = button('history-close', 'icon-button');
   close.title = 'Close';
@@ -69,9 +69,9 @@
   error.setAttribute('role', 'alert');
   error.hidden = true;
   const footer = create('footer', 'history-footer');
-  const selectAll = button('history-select-all', 'history-select-all', '全选');
-  const cancel = button('history-cancel', '', '取消');
-  const submit = button('history-import', 'history-primary', '导入');
+  const selectAll = button('history-select-all', 'history-select-all', 'Select All');
+  const cancel = button('history-cancel', '', 'Cancel');
+  const submit = button('history-import', 'history-primary', 'Import');
   footer.append(selectAll, submit, cancel);
   dialog.append(header, status, list, error, footer);
   document.body.append(dialog);
@@ -93,11 +93,11 @@
     close.disabled = cancel.disabled = importing;
     selectAll.hidden = !inputs.length;
     selectAll.disabled = loading || importing || !inputs.length;
-    selectAll.textContent = inputs.length && selected === inputs.length ? '取消全选' : '全选';
+    selectAll.textContent = inputs.length && selected === inputs.length ? 'Deselect All' : 'Select All';
     submit.disabled = loading || importing || !selected;
-    submit.textContent = importing ? '导入中…' : '导入';
+    submit.textContent = importing ? 'Importing...' : 'Import';
     list.setAttribute('aria-busy', String(loading || importing));
-    status.textContent = loading ? '加载中…' : !inputs.length && error.hidden ? '暂无可导入的 CLI sessions' : '';
+    status.textContent = loading ? 'Loading...' : !inputs.length && error.hidden ? 'No CLI sessions available to import' : '';
     status.hidden = !status.textContent;
   }
   function closeDialog() {
@@ -138,9 +138,10 @@
         input.value = project.path;
         input.onchange = update;
         inputs.push(input);
-        label.title = project.path;
+        const displayPath = desktop.formatPath?.(project.path) ?? project.path;
+        label.title = displayPath;
         const path = create('span', 'history-project-path');
-        const value = create('bdi', 'history-project-value', project.path);
+        const value = create('bdi', 'history-project-value', displayPath);
         value.setAttribute('dir', 'ltr');
         path.append(value);
         label.append(input, path);

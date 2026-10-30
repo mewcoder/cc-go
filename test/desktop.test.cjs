@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function desktopHarness({ mounted = false, nativeExternalLinks } = {}) {
+function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linux' } = {}) {
   const attributes = new Map();
   const handlers = new Map();
   const events = new Map();
@@ -22,14 +22,14 @@ function desktopHarness({ mounted = false, nativeExternalLinks } = {}) {
   const state = { views: [], workspaces: [], archivedSessions: [], logsOpen: false, sidebarWidth: 248, sidebarCollapsed: false };
   let failLogs = false, blockLogs, failDrafts = false;
   const window = {
-    __goDesktopConfig: { platform: 'linux', token: 'fixture', nativeExternalLinks },
+    __goDesktopConfig: { platform, token: 'fixture', nativeExternalLinks },
     addEventListener: (key, fn) => events.set(key, fn),
     goHUD: { gap: 4, height: 20, create: () => ({ render() {}, layout() {}, setDraft() {} }) },
   };
   vm.runInNewContext(source, {
     window, document: {
       body: mounted ? { append: frame => frames.push(frame) } : null,
-      createElement: () => ({ dataset: {}, style: {}, contentWindow: {}, setAttribute() {}, remove() {} }),
+      createElement: () => ({ dataset: {}, style: {}, contentWindow: { messages: [], postMessage(message, origin) { this.messages.push({ message, origin }); } }, setAttribute() {}, remove() {} }),
       getElementById: () => connection,
     },
     URL, innerWidth: 1200, innerHeight: 820,
@@ -48,7 +48,7 @@ function desktopHarness({ mounted = false, nativeExternalLinks } = {}) {
     },
   });
   return {
-    window, connection, attributes, handlers, calls, state, errors,
+    window, connection, attributes, handlers, calls, state, errors, frames,
     async load() { events.get('DOMContentLoaded')(); await settle(); },
     set failLogs(value) { failLogs = value; },
     set blockLogs(value) { blockLogs = value; },
@@ -57,9 +57,32 @@ function desktopHarness({ mounted = false, nativeExternalLinks } = {}) {
       events.get('message')({ source: frames[index].contentWindow, origin,
         data: { type: 'claude-host:composer', rect: null, hasDraft, viewport: { width: 948, height: 820 } } });
     },
+    transport(index, sequence, connected, origin = 'http://127.0.0.1:23457') {
+      events.get('message')({ source: frames[index].contentWindow, origin,
+        data: { type: 'claude-host:transport', sequence, connected } });
+    },
     logCalls: () => calls.filter(call => call.body?.key === 'logs'),
   };
 }
+
+test('Windows path display uppercases only drive letters without changing API paths', async () => {
+  const cases = [
+    ['c:\\Users\\mew\\MyProject', 'C:\\Users\\mew\\MyProject'],
+    ['d:/Code/myProject', 'D:/Code/myProject'],
+    ['c:\\', 'C:\\'], ['d:', 'D:'], ['D:\\Code', 'D:\\Code'],
+    ['\\\\server\\share\\case', '\\\\server\\share\\case'],
+    ['/code/case', '/code/case'], ['myProject', 'myProject'],
+  ];
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    const h = desktopHarness({ platform });
+    for (const [raw, displayed] of cases) {
+      assert.equal(h.window.desktop.formatPath(raw), platform === 'win32' ? displayed : raw);
+    }
+    const raw = 'c:\\Code\\MyProject';
+    await h.window.desktop.importProjects([raw]);
+    assert.deepEqual(h.calls.find(call => call.url === '/api/import-projects').body.paths, [raw]);
+  }
+});
 
 test('external-link support is advertised only when the host supplies its native bridge', () => {
   for (const value of [undefined, false, true]) {
@@ -172,10 +195,13 @@ test('a slow background snapshot cannot restore an older conversation after an a
 
 test('host-changing actions flush draft flags from active and hidden views without sending their text', async () => {
   const h = desktopHarness({ mounted: true });
-  h.state.views = ['background', 'active'].map((id, index) => ({ id, active: index === 1, ready: true, revision: 1,
+  h.state.views = ['background', 'active'].map((id, index) => ({ id, active: index === 0, ready: true, revision: 1,
     url: `http://127.0.0.1:23457/view/${id}/token/index.html` }));
   await h.load();
   h.composer(0, true);
+  h.state.views[0].active = false;
+  h.state.views[1].active = true;
+  await h.window.desktop.getState();
   h.composer(1, false);
   await h.window.desktop.newSession('/other');
   const writes = h.calls.filter(call => call.url !== '/api/state');
@@ -187,6 +213,54 @@ test('host-changing actions flush draft flags from active and hidden views witho
   for (const call of writes.filter(call => call.url === '/api/view-draft')) {
     assert.deepEqual(Object.keys(call.body).sort(), ['draft', 'id']);
   }
+});
+
+test('unopened idle views do not mount pages; active and background working views do', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = Array.from({ length: 12 }, (_, index) => ({ id: String(index), active: index === 0,
+    busy: index === 1, ready: true, sequence: 0, revision: 1, url: `http://127.0.0.1:23457/view/${index}/token/index.html` }));
+  await h.load();
+  assert.equal(h.frames.length, 2);
+  h.state.views[0].active = false;
+  h.state.views[2].active = true;
+  await h.window.desktop.getState();
+  assert.equal(h.frames.length, 3);
+  assert.equal(h.frames[0].hidden, true);
+  assert.equal(h.frames[2].hidden, false);
+});
+
+test('hidden idle transports suspend, queued messages wake them and running sessions stay connected', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = [{ id: 'view', active: true, busy: false, ready: true, sequence: 4, revision: 1,
+    url: 'http://127.0.0.1:23457/view/view/token/index.html' }];
+  await h.load();
+  h.transport(0, 0, true, 'http://attacker.invalid');
+  assert.equal(h.frames[0].contentWindow.messages.length, 0);
+  h.transport(0, 0, true);
+  const commands = h.frames[0].contentWindow.messages;
+  assert.equal(commands.at(-1).message.keepAlive, true);
+  assert.equal(commands.at(-1).origin, 'http://127.0.0.1:23457');
+  h.state.views[0].active = false;
+  await h.window.desktop.getState();
+  assert.equal(commands.at(-1).message.keepAlive, false);
+  h.transport(0, 4, false);
+  assert.equal(commands.at(-1).message.keepAlive, false);
+  h.state.views[0].sequence = 5;
+  await h.window.desktop.getState();
+  assert.equal(commands.at(-1).message.keepAlive, true);
+  h.transport(0, 4, true);
+  assert.equal(commands.at(-1).message.keepAlive, false);
+  h.state.views[0].busy = true;
+  await h.window.desktop.getState();
+  assert.equal(commands.at(-1).message.keepAlive, true);
+  h.state.windowVisible = false;
+  await h.window.desktop.getState();
+  assert.equal(commands.at(-1).message.keepAlive, true, 'hiding the app must not suspend running work');
+  h.state.views[0].busy = false;
+  await h.window.desktop.getState();
+  assert.equal(commands.at(-1).message.keepAlive, false);
 });
 
 test('failed draft synchronization prevents destructive actions and is retried on the next action', async () => {

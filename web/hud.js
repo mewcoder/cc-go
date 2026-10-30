@@ -17,7 +17,7 @@
       && !state.viewLoading && state.views?.some(view => view.active && view.ready);
   }
 
-  function describe(state) {
+  function describe(state, formatPath = value => value) {
     const m = state.sessionMetrics ?? {}, project = state.project ?? {};
     const percent = valid(m.contextTokens) && valid(m.contextWindow) && m.contextWindow > 0
       ? Math.round(m.contextTokens / m.contextWindow * 100) : undefined;
@@ -39,7 +39,7 @@
     const addedText = hasChanges && changes.added ? `+${exact(changes.added)}` : '';
     const deletedText = hasChanges && changes.deleted ? `-${exact(changes.deleted)}` : '';
     return {
-      project: { text: project.name || missing, title: project.path || state.workspace || 'Project directory unavailable' },
+      project: { text: formatPath(project.name || missing), title: formatPath(project.path || state.workspace || 'Project directory unavailable') },
       branch: { text: branch, title: [project.gitStatus === 'none' ? 'This directory is not in a Git repository'
         : project.gitStatus === 'detached' ? `Detached HEAD: ${project.branch}` : project.branch || 'Git information unavailable', project.watchError].filter(Boolean).join('. ') },
       changes: { hidden: !hasChanges, text: [filesText, addedText, deletedText].filter(Boolean).join(' '), filesText, addedText, deletedText,
@@ -120,7 +120,7 @@
         const next = JSON.stringify([state.workspace, state.activeSessionId]);
         if (next !== selection) bar.scrollLeft = 0;
         selection = next;
-        const data = describe(state);
+        const data = describe(state, actions.formatPath);
         for (const [name, { field, text }] of Object.entries(fields)) {
           field.hidden = Boolean(data[name].hidden);
           const content = name === 'changes' ? data.changes.filesText : data[name].text;

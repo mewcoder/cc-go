@@ -2,6 +2,7 @@
 
 (() => {
   const desktop = window.desktop;
+  const formatPath = value => desktop?.formatPath?.(value) ?? String(value);
   const integratedTitlebar = ['darwin', 'win32'].includes(desktop?.platform);
   document.documentElement.dataset.platform = desktop?.platform || 'unknown';
   const element = (id) => document.getElementById(id);
@@ -179,11 +180,25 @@
     if (!Number.isFinite(value) || value <= 0) return '';
     const elapsed = Date.now() - value;
     if (!Number.isFinite(elapsed) || elapsed < 0) return '';
-    if (elapsed < 60_000) return 'Just now';
-    if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} min ago`;
-    if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} hr ago`;
-    if (elapsed < 30 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)} days ago`;
-    return new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+    if (elapsed < 60_000) return 'now';
+    if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;
+    if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;
+    if (elapsed < 30 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)}d`;
+    if (elapsed < 365 * 86_400_000) return `${Math.floor(elapsed / (30 * 86_400_000))}mo`;
+    return `${Math.floor(elapsed / (365 * 86_400_000))}y`;
+  }
+
+  function formatOutputLog(line) {
+    // Only format the host's leading timestamp; leave plugin text and saved logs intact.
+    return String(line).replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(?= \[)/, timestamp => {
+      const date = new Date(timestamp);
+      if (!Number.isFinite(date.getTime())) return timestamp;
+      const pad = value => String(value).padStart(2, '0');
+      const day = [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join('-');
+      const time = [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join(':');
+      const fraction = timestamp.includes('.') ? '.' + String(date.getMilliseconds()).padStart(3, '0') : '';
+      return day + ' ' + time + fraction;
+    });
   }
 
   function refreshSessionTimes() {
@@ -494,7 +509,7 @@
       status.dataset.status = statusName;
     }
     status.title = label;
-    open.title = archived ? `${name}\n${workspacePath}` : `${name}\n${label}`;
+    open.title = archived ? `${name}\n${formatPath(workspacePath)}` : `${name}\n${label}`;
     open.setAttribute('aria-label', archived ? name : `${name}, ${label}`);
     row.classList.toggle('active', Boolean(session.active));
     time.textContent = archived ? '' : relativeTime(session.updatedAt);
@@ -544,7 +559,7 @@
       entry.loadMore = document.createElement('button');
       entry.loadMore.type = 'button';
       entry.loadMore.className = 'session-load-more';
-      entry.loadMore.textContent = 'Load More';
+      entry.loadMore.textContent = 'Show More';
       entry.loadMore.addEventListener('click', () => {
         entry.sessionLimit += 5;
         render();
@@ -552,7 +567,7 @@
       });
     }
     entry.loadMore.hidden = total <= sessions.length;
-    entry.loadMore.setAttribute('aria-label', `Load more chats in ${entry.label.textContent}`);
+    entry.loadMore.setAttribute('aria-label', `Show more chats in ${entry.label.textContent}`);
     if (entry.sessionList.lastElementChild !== entry.loadMore) entry.sessionList.append(entry.loadMore);
     entry.sessionList.hidden = collapsedWorkspaces.has(workspacePath);
   }
@@ -603,11 +618,11 @@
     items.forEach((item, index) => {
       const entry = workspaceElements.get(item.path) ?? createWorkspaceNode(item.path);
       const collapsed = collapsedWorkspaces.has(item.path);
-      const name = String(item.name || item.path);
+      const name = formatPath(item.name || item.path);
       entry.row.classList.toggle('active', Boolean(item.active));
       entry.open.classList.toggle('active', Boolean(item.active));
       entry.open.setAttribute('aria-current', item.active ? 'true' : 'false');
-      entry.open.title = String(item.path);
+      entry.open.title = formatPath(item.path);
       entry.label.textContent = name;
       if (entry.expanded !== !collapsed) {
         entry.expanded = !collapsed;
@@ -624,7 +639,7 @@
     });
     ui.addWorkspace.disabled = !desktop || pending.has('add-workspace') || phase === 'setup' || phase === 'starting' || phase === 'activating';
     ui.newChat.disabled = !desktop || phase !== 'active' || pending.has('new-chat') || Boolean(state.settingsOpen || state.pluginSetupOpen || state.viewLoading);
-    ui.newChat.title = items.some(item => item.path === state.workspace) ? `New Chat in ${state.workspace}` : 'Start a new chat in an available workspace';
+    ui.newChat.title = items.some(item => item.path === state.workspace) ? `New Chat in ${formatPath(state.workspace)}` : 'Start a new chat in an available workspace';
   }
 
   function renderPluginSetup(phase) {
@@ -667,7 +682,7 @@
     ui.setupInstall.hidden = Boolean(setup.cliVersion) || status === 'detecting';
     ui.setupRetry.textContent = status === 'ready' ? 'Reload' : setup.cliVersion && status === 'error' ? 'Try Download Again' : 'Check Again';
     for (const button of [ui.setupRetry, ui.setupSelectCli, ui.setupImport]) button.disabled = busy || pending.has('plugin');
-    ui.setupDirectory.textContent = setup.directory ?? '';
+    ui.setupDirectory.textContent = formatPath(setup.directory ?? '');
     ui.pluginUpdate.hidden = phase !== 'active' || !['downloading', 'extracting', 'ready', 'error', 'reloading'].includes(status);
     ui.pluginUpdate.disabled = busy || pending.has('plugin');
     ui.pluginUpdate.classList.toggle('is-busy', busy);
@@ -730,7 +745,7 @@
     ui.connectionStatus.setAttribute('aria-label', `${actionError || connection}, ${versionDetail}`);
 
     const logs = Array.isArray(state.logs) ? state.logs : [];
-    const logText = logs.length ? logs.map(String).join('\n') : 'No output yet.';
+    const logText = logs.length ? logs.map(formatOutputLog).join('\n') : 'No output yet.';
     if (ui.logOutput.textContent !== logText) {
       const follow = ui.logOutput.scrollHeight - ui.logOutput.scrollTop - ui.logOutput.clientHeight <= 24;
       ui.logOutput.textContent = logText;
@@ -766,8 +781,10 @@
       sidebarCollapsed = Boolean(state.sidebarCollapsed);
       applySidebar();
     }
+    const openingLogs = Boolean(state.logsOpen) && !logsOpen;
     logsOpen = Boolean(state.logsOpen);
     render();
+    if (openingLogs) ui.logOutput.scrollTop = ui.logOutput.scrollHeight;
   }
 
   ui.addWorkspace.addEventListener('click', () => {

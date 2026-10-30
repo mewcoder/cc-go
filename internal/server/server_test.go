@@ -217,7 +217,7 @@ func TestShellAndPluginShareScrollbarStyles(t *testing.T) {
 func TestBridgePreservesCSPAndLoadsBeforePlugin(t *testing.T) {
 	html := `<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-abc'; img-src data:;"></head><body><script nonce="abc" src="plugin.js"></script></body></html>`
 	result := injectBridge(html, "http://127.0.0.1:23457/view/id/token/")
-	for _, want := range []string{"default-src 'none'", "img-src data:", "connect-src http://127.0.0.1:23457/view/id/token/", `nonce="abc" src="http://`, `nonce="abc" src="http://127.0.0.1:23457/view/id/token/composer.js"`} {
+	for _, want := range []string{"default-src 'none'", "img-src data:", "connect-src http://127.0.0.1:23457/view/id/token/ ws://127.0.0.1:23457/view/id/token/", `nonce="abc" src="http://`, `nonce="abc" src="http://127.0.0.1:23457/view/id/token/composer.js"`} {
 		if !strings.Contains(result, want) {
 			t.Fatal("lost CSP or bridge contract:", want)
 		}

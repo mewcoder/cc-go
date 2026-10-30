@@ -2,6 +2,9 @@
 
 (() => {
   const config = window.__goDesktopConfig;
+  // Display only: keep original path keys for APIs, drafts and session history.
+  const formatPath = value => config.platform === 'win32'
+    ? String(value).replace(/^[a-z]:/, drive => drive.toUpperCase()) : String(value);
   const stateListeners = new Set();
   const actionListeners = new Set();
   const frames = new Map();
@@ -94,9 +97,16 @@
   }
 
   window.addEventListener('message', event => {
-    if (event.data?.type !== 'claude-host:composer') return;
+    if (!['claude-host:composer', 'claude-host:transport'].includes(event.data?.type)) return;
     const entry = [...frames].find(([, frame]) => frame.contentWindow === event.source);
     if (!entry || event.origin !== new URL(entry[1].dataset.url).origin) return;
+    if (event.data.type === 'claude-host:transport') {
+      const { sequence, connected } = event.data;
+      if (!Number.isSafeInteger(sequence) || sequence < 0 || typeof connected !== 'boolean') return;
+      entry[1].transport = { sequence, connected };
+      syncTransport(entry[1], latest?.views?.find(view => view.id === entry[0]));
+      return;
+    }
     const { rect, viewport, hasDraft } = event.data;
     if (typeof hasDraft !== 'boolean') return;
     if (!viewport || ![viewport.width, viewport.height].every(value => Number.isFinite(value) && value > 0)) return;
@@ -110,6 +120,16 @@
     layout();
   });
 
+  function syncTransport(frame, view) {
+    if (!frame.transport || !view) return;
+    // The existing state poll wakes suspended views when the host queues new data.
+    const keepAlive = !frame.hidden && latest.windowVisible !== false && !document.hidden || view.busy === true
+      || !frame.transport.connected && view.sequence > frame.transport.sequence;
+    if (frame.transportWanted === keepAlive) return;
+    frame.transportWanted = keepAlive;
+    frame.contentWindow.postMessage({ type: 'claude-host:transport', keepAlive }, new URL(frame.dataset.url).origin);
+  }
+
   function mountViews(state) {
     if (!document.body) return;
     const ids = new Set(state.views.map(view => view.id));
@@ -120,6 +140,7 @@
       if (!view.ready) continue;
       let frame = frames.get(view.id);
       if (!frame) {
+        if (!view.active && !view.busy) continue;
         frame = document.createElement('iframe');
         frame.className = 'go-extension-view';
         frame.title = 'Claude extension view';
@@ -130,15 +151,23 @@
         document.body.append(frame);
       }
       const url = view.url + '?revision=' + view.revision;
-      if (frame.dataset.url !== url) { composers.delete(view.id); frame.dataset.url = url; frame.src = url; }
-      frame.hidden = !view.active || state.phase !== 'active' || state.settingsOpen || state.pluginSetupOpen;
+      if (frame.dataset.url !== url) {
+        composers.delete(view.id);
+        frame.transport = undefined;
+        frame.transportWanted = undefined;
+        frame.dataset.url = url;
+        frame.src = url;
+      }
+      frame.hidden = Boolean(!view.active || state.phase !== 'active' || state.settingsOpen || state.pluginSetupOpen);
+      syncTransport(frame, view);
     }
-    if (!chooser && window.goSelection) chooser = window.goSelection.create(document, { request, invoke });
+    if (!chooser && window.goSelection) chooser = window.goSelection.create(document, { request, invoke, formatPath });
     if (!hud && window.goHUD) hud = window.goHUD.create(document, chooser ? {
+      formatPath,
       project: field => chooser.open('project', latest, field),
       branch: field => chooser.open('branch', latest, field),
       changes: requestGitRefresh,
-    } : { changes: requestGitRefresh });
+    } : { changes: requestGitRefresh, formatPath });
     hud?.render(state);
     layout();
   }
@@ -183,6 +212,7 @@
 
   Object.defineProperty(window, 'desktop', { value: Object.freeze({
     platform: config.platform,
+    formatPath,
     nativeExternalLinks: Boolean(config.nativeExternalLinks),
     getState: refresh,
     refreshGit: requestGitRefresh,

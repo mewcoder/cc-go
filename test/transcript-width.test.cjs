@@ -17,15 +17,16 @@ function bridgeFixture(transcriptWidth) {
     addEventListener() {},
   };
   const context = {
-    window, document, console, queueMicrotask,
+    window, document, console, queueMicrotask, URL, setTimeout, clearTimeout,
     __claudeBridge: { base: '/view/test/', theme: 'dark', state: null, transcriptWidth },
-    EventSource: class { constructor() { stream = this; } close() {} },
+    WebSocket: class { constructor() { stream = this; } close() {} },
     MessageEvent: class { constructor(type, options) { this.type = type; Object.assign(this, options); } },
     location: { origin: 'http://127.0.0.1', href: 'http://127.0.0.1/view/test/' },
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../web/bridge.js'), 'utf8'), context);
   window.addEventListener('message', () => {});
-  return { styles, delivered, send: message => stream.onmessage({ data: JSON.stringify(message) }) };
+  let sequence = 0;
+  return { styles, delivered, send: message => stream.onmessage({ data: JSON.stringify({ sequence: ++sequence, data: message }) }) };
 }
 
 test('each transcript preset initializes before plugin rendering and updates without reload', () => {

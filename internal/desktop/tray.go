@@ -44,7 +44,7 @@ func configureWindowLifecycle(app *mygo.Application, window *mygo.Window) error 
 		return err
 	}
 	tray.OnClick(show)
-	tray.OnRightClick(func() { menu.Popup(nil) })
+	tray.OnRightClick(func() { popupTrayMenu(window, menu) })
 	app.OnQuit(tray.Destroy)
 
 	// Quit also emits OnClose. Let explicit quit destroy the window rather

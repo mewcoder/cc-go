@@ -37,8 +37,37 @@ const approvedChanges = {
     ],
   ],
   'shell.js': [
+    ["    if (elapsed < 60_000) return 'now';", "    if (elapsed < 60_000) return 'Just now';"],
+    ['    if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;', '    if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} min ago`;'],
+    ['    if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;', '    if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} hr ago`;'],
+    ['    if (elapsed < 30 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)}d`;', '    if (elapsed < 30 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)} days ago`;'],
+    ['    if (elapsed < 365 * 86_400_000) return `${Math.floor(elapsed / (30 * 86_400_000))}mo`;\n', ''],
+    ['    return `${Math.floor(elapsed / (365 * 86_400_000))}y`;', "    return new Date(value).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });"],
+    [String.raw`  function formatOutputLog(line) {
+    // Only format the host's leading timestamp; leave plugin text and saved logs intact.
+    return String(line).replace(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))(?= \[)/, timestamp => {
+      const date = new Date(timestamp);
+      if (!Number.isFinite(date.getTime())) return timestamp;
+      const pad = value => String(value).padStart(2, '0');
+      const day = [date.getFullYear(), pad(date.getMonth() + 1), pad(date.getDate())].join('-');
+      const time = [pad(date.getHours()), pad(date.getMinutes()), pad(date.getSeconds())].join(':');
+      const fraction = timestamp.includes('.') ? '.' + String(date.getMilliseconds()).padStart(3, '0') : '';
+      return day + ' ' + time + fraction;
+    });
+  }
+
+`, ''],
+    ["logs.map(formatOutputLog).join('\\n')", "logs.map(String).join('\\n')"],
+    ["    const openingLogs = Boolean(state.logsOpen) && !logsOpen;\n", ''],
+    ["    if (openingLogs) ui.logOutput.scrollTop = ui.logOutput.scrollHeight;\n", ''],
+    ["  const formatPath = value => desktop?.formatPath?.(value) ?? String(value);\n", ''],
+    ['${formatPath(workspacePath)}', '${workspacePath}'],
+    ['      const name = formatPath(item.name || item.path);', '      const name = String(item.name || item.path);'],
+    ['      entry.open.title = formatPath(item.path);', '      entry.open.title = String(item.path);'],
+    ['${formatPath(state.workspace)}', '${state.workspace}'],
+    ["    ui.setupDirectory.textContent = formatPath(setup.directory ?? '');", "    ui.setupDirectory.textContent = setup.directory ?? '';"],
     ["    entry.sessionLimit ??= 5;\n    const total = sessions.length;\n    sessions = sessions.slice(0, entry.sessionLimit);\n", ''],
-    ["    if (!entry.loadMore) {\n      entry.loadMore = document.createElement('button');\n      entry.loadMore.type = 'button';\n      entry.loadMore.className = 'session-load-more';\n      entry.loadMore.textContent = 'Load More';\n      entry.loadMore.addEventListener('click', () => {\n        entry.sessionLimit += 5;\n        render();\n        if (entry.loadMore.hidden) entry.sessionList.querySelector('.session-row:last-of-type .session-item')?.focus();\n      });\n    }\n    entry.loadMore.hidden = total <= sessions.length;\n    entry.loadMore.setAttribute('aria-label', `Load more chats in ${entry.label.textContent}`);\n    if (entry.sessionList.lastElementChild !== entry.loadMore) entry.sessionList.append(entry.loadMore);\n", ''],
+    ["    if (!entry.loadMore) {\n      entry.loadMore = document.createElement('button');\n      entry.loadMore.type = 'button';\n      entry.loadMore.className = 'session-load-more';\n      entry.loadMore.textContent = 'Show More';\n      entry.loadMore.addEventListener('click', () => {\n        entry.sessionLimit += 5;\n        render();\n        if (entry.loadMore.hidden) entry.sessionList.querySelector('.session-row:last-of-type .session-item')?.focus();\n      });\n    }\n    entry.loadMore.hidden = total <= sessions.length;\n    entry.loadMore.setAttribute('aria-label', `Show more chats in ${entry.label.textContent}`);\n    if (entry.sessionList.lastElementChild !== entry.loadMore) entry.sessionList.append(entry.loadMore);\n", ''],
     ["      entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);\n", ''],
     ["    if (key === 'desktop.transcriptWidth') {\n      control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });\n    } else if (property.type === 'boolean') {", "    if (property.type === 'boolean') {"],
     ["  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });", "  ui.setupSelectCli.addEventListener('click', () => { void runCommand('plugin', () => desktop.selectClaude()); });\n  ui.setupImport.addEventListener('click', () => { void runCommand('plugin', () => desktop.importPlugin()); });"],

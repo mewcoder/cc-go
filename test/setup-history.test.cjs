@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function setupHarness(phase = 'setup', nativeExternalLinks = true) {
+function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = value => value) {
   const elements = [];
   let focused;
   class Element {
@@ -96,6 +96,7 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true) {
     workspaces: [{ path: '/projects/added' }],
   };
   const window = { desktop: {
+    formatPath,
     nativeExternalLinks,
     onState(callback) { onState = callback; },
     checkPlugin: async () => calls.push('check'),
@@ -590,7 +591,10 @@ test('setup save warnings are nonfatal, survive polling and clear after a succes
 test('CLI sessions import is compact and has no description or selection instructions', async () => {
   const h = setupHarness('active');
   await h.byID('import-history').onclick();
-  assert.equal(h.byID('history-title').textContent, '导入 Claude Code CLI sessions');
+  assert.equal(h.byID('history-title').textContent, 'Import Claude Code CLI sessions');
+  assert.equal(h.cancelButton.textContent, 'Cancel');
+  assert.equal(h.importButton.textContent, 'Import');
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../web/history.js'), 'utf8'), /\p{Script=Han}/u);
   assert.equal(h.byID('history-description'), undefined);
   assert.equal(h.byID('history-dialog').attributes['aria-describedby'], undefined);
   assert.equal(h.byID('history-status').hidden, true);
@@ -610,6 +614,23 @@ test('CLI sessions import is compact and has no description or selection instruc
   assert.match(css, /\.history-project-path \{[^}]*direction: rtl; text-align: left;/);
 });
 
+test('history path labels use uppercase drives but import retains the original path', async () => {
+  const raw = 'd:\\Code\\MyProject';
+  const h = setupHarness('active', true, value => value.replace(/^d:/, 'D:'));
+  h.projects = [{ path: raw }];
+  await h.byID('import-history').onclick();
+  const input = h.inputs[0];
+  assert.equal(input.parent.title, 'D:\\Code\\MyProject');
+  assert.equal(input.nextElementSibling.children[0].textContent, 'D:\\Code\\MyProject');
+  assert.equal(input.value, raw);
+  input.checked = true;
+  input.onchange();
+  await h.importButton.onclick();
+  assert.deepEqual(Array.from(h.calls[0]), [raw]);
+  await h.byID('import-history').onclick();
+  assert.equal(h.inputs.length, 0);
+});
+
 test('history picker imports multiple projects and omits already added projects', async () => {
   const h = setupHarness('active');
   await h.byID('import-history').onclick();
@@ -626,7 +647,7 @@ test('history picker imports multiple projects and omits already added projects'
   await h.byID('import-history').onclick();
   assert.equal(h.inputs.length, 0);
   assert.equal(h.importButton.disabled, true);
-  assert.equal(h.byID('history-status').textContent, '暂无可导入的 CLI sessions');
+  assert.equal(h.byID('history-status').textContent, 'No CLI sessions available to import');
 });
 
 test('projects added elsewhere disappear while the import dialog is open', async () => {
@@ -651,22 +672,22 @@ test('select all toggles available projects and follows individual selections', 
   const selectAll = h.byID('history-select-all');
   assert.equal(selectAll.hidden, false);
   assert.equal(selectAll.disabled, false);
-  assert.equal(selectAll.textContent, '全选');
+  assert.equal(selectAll.textContent, 'Select All');
   selectAll.onclick();
   assert.ok(h.inputs.every(input => input.checked));
-  assert.equal(selectAll.textContent, '取消全选');
+  assert.equal(selectAll.textContent, 'Deselect All');
   assert.equal(h.importButton.disabled, false);
   selectAll.onclick();
   assert.ok(h.inputs.every(input => !input.checked));
-  assert.equal(selectAll.textContent, '全选');
+  assert.equal(selectAll.textContent, 'Select All');
   assert.equal(h.importButton.disabled, true);
   h.inputs[0].checked = true;
   h.inputs[0].onchange();
-  assert.equal(selectAll.textContent, '全选');
+  assert.equal(selectAll.textContent, 'Select All');
   selectAll.onclick();
   h.inputs[1].checked = false;
   h.inputs[1].onchange();
-  assert.equal(selectAll.textContent, '全选');
+  assert.equal(selectAll.textContent, 'Select All');
   selectAll.onclick();
   await h.importButton.onclick();
   assert.deepEqual(Array.from(h.calls[0]), ['/projects/one', '/projects/two']);
@@ -680,6 +701,7 @@ test('select all is unavailable during discovery and import', async () => {
   let resolveDiscovery;
   h.discovery = new Promise(done => { resolveDiscovery = done; });
   const discovering = h.byID('import-history').onclick();
+  assert.equal(h.byID('history-status').textContent, 'Loading...');
   assert.equal(selectAll.hidden, true);
   assert.equal(selectAll.disabled, true);
   selectAll.onclick();
@@ -690,6 +712,7 @@ test('select all is unavailable during discovery and import', async () => {
   let resolveImport;
   h.importing = new Promise(done => { resolveImport = done; });
   const importing = h.importButton.onclick();
+  assert.equal(h.importButton.textContent, 'Importing...');
   assert.equal(selectAll.disabled, true);
   selectAll.onclick();
   assert.equal(h.inputs[0].checked, true);
@@ -707,7 +730,7 @@ test('cancelling, empty history and failed import stay separate from setup', asy
   await h.byID('import-history').onclick();
   assert.equal(h.inputs.length, 0);
   assert.equal(h.importButton.disabled, true);
-  assert.equal(h.byID('history-status').textContent, '暂无可导入的 CLI sessions');
+  assert.equal(h.byID('history-status').textContent, 'No CLI sessions available to import');
   h.cancelButton.onclick();
   h.projects = [{ path: '/projects/one' }];
   await h.byID('import-history').onclick();

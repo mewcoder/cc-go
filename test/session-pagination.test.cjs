@@ -61,8 +61,8 @@ test('each workspace shows five chats then adds five per click without duplicate
   assert.deepEqual(h.ids(), ['0', '1', '2', '3', '4']);
   assert.equal(h.entry.sessions.size, 5);
   assert.equal(h.entry.loadMore.hidden, false);
-  assert.equal(h.entry.loadMore.textContent, 'Load More');
-  assert.equal(h.entry.loadMore.attributes['aria-label'], 'Load more chats in /project');
+  assert.equal(h.entry.loadMore.textContent, 'Show More');
+  assert.equal(h.entry.loadMore.attributes['aria-label'], 'Show more chats in /project');
   const second = h.add('/other', 8);
   const firstRow = h.entry.sessions.get('0');
   h.entry.loadMore.handlers.click();
@@ -78,7 +78,7 @@ test('each workspace shows five chats then adds five per click without duplicate
   assert.equal(h.focused().id, '11');
 });
 
-test('zero to five chats never offer Load More and empty workspaces keep their hint', () => {
+test('zero to five chats never offer Show More and empty workspaces keep their hint', () => {
   for (const count of [0, 1, 5]) {
     const h = fixture(count);
     assert.equal(h.ids().length, count);
