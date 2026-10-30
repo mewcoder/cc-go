@@ -226,26 +226,59 @@ func prepare(ctx context.Context, archive, directory, platform, version string) 
 	if err != nil {
 		return nil, err
 	}
-	root := filepath.Join(directory, digest)
-	if info, err := os.Lstat(root); err == nil {
+	// Keep legacy digest-only caches readable. New installations stay in their
+	// original unique directory; the completion marker publishes them for reuse.
+	roots := []string{filepath.Join(directory, digest)}
+	entries, err := os.ReadDir(directory)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), digest+"-") {
+			roots = append(roots, filepath.Join(directory, entry.Name()))
+		}
+	}
+	for i, root := range roots {
+		info, err := os.Lstat(root)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
 		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, errors.New("unsafe extension cache")
+		}
+		if i != 0 {
+			marker, err := os.Lstat(filepath.Join(root, ".complete"))
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if !marker.Mode().IsRegular() || marker.Size() != 0 {
+				return nil, errors.New("invalid extension cache completion marker")
+			}
 		}
 		if err := verifyReceipt(ctx, root); err != nil {
 			return nil, fmt.Errorf("extension cache altered (remove it to re-extract): %w", err)
 		}
 		return validate(root, platform, version)
-	} else if !os.IsNotExist(err) {
-		return nil, err
 	}
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}
-	tmp, err := os.MkdirTemp(directory, ".extract-")
+	root, err := os.MkdirTemp(directory, digest+"-")
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmp)
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(root)
+		}
+	}()
 	z, err := zip.OpenReader(archive)
 	if err != nil {
 		return nil, err
@@ -266,7 +299,7 @@ func prepare(ctx context.Context, archive, directory, platform, version string) 
 			return nil, err
 		}
 		key := strings.ToLower(name)
-		if seen[key] || key == ".receipt.json" {
+		if seen[key] || key == ".receipt.json" || key == ".complete" {
 			return nil, fmt.Errorf("duplicate or reserved VS Code extension (.vsix) path: %s", name)
 		}
 		seen[key] = true
@@ -278,7 +311,7 @@ func prepare(ctx context.Context, archive, directory, platform, version string) 
 			return nil, errors.New("expanded VS Code extension (.vsix) exceeds 2 GiB")
 		}
 		total += entry.UncompressedSize64
-		filename := filepath.Join(tmp, filepath.FromSlash(name))
+		filename := filepath.Join(root, filepath.FromSlash(name))
 		if mode.IsDir() {
 			if err := os.MkdirAll(filename, 0700); err != nil {
 				return nil, err
@@ -301,20 +334,22 @@ func prepare(ctx context.Context, archive, directory, platform, version string) 
 		}
 		receipt = append(receipt, receiptEntry{name, hash})
 	}
-	if _, err := validate(tmp, platform, version); err != nil {
+	prepared, err := validate(root, platform, version)
+	if err != nil {
 		return nil, err
 	}
 	b, _ := json.Marshal(receipt)
-	if err := os.WriteFile(filepath.Join(tmp, ".receipt.json"), b, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".receipt.json"), b, 0600); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := os.Rename(tmp, root); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".complete"), nil, 0600); err != nil {
 		return nil, err
 	}
-	return validate(root, platform, version)
+	complete = true
+	return prepared, nil
 }
 
 func safeName(name string) (string, error) {
@@ -419,7 +454,15 @@ func verifyReceipt(ctx context.Context, root string) error {
 				return err
 			}
 			name := filepath.ToSlash(rel)
-			if name != ".receipt.json" && !listed[name] {
+			if name == ".complete" {
+				info, err := entry.Info()
+				if err != nil {
+					return err
+				}
+				if !info.Mode().IsRegular() || info.Size() != 0 {
+					return errors.New("invalid extension cache completion marker")
+				}
+			} else if name != ".receipt.json" && !listed[name] {
 				return fmt.Errorf("unexpected cached file: %s", name)
 			}
 		}

@@ -114,7 +114,7 @@ func TestLocalPrepareCancelsExtractionAndCacheVerification(t *testing.T) {
 					}
 					return
 				}
-				files, _ := filepath.Glob(filepath.Join(cache, ".extract-*", "extension", "payload"))
+				files, _ := filepath.Glob(filepath.Join(cache, "*", "extension", "payload"))
 				for _, file := range files {
 					if info, err := os.Stat(file); err == nil && info.Size() > 0 {
 						cancel()
@@ -133,6 +133,11 @@ func TestLocalPrepareCancelsExtractionAndCacheVerification(t *testing.T) {
 			entries, _ := os.ReadDir(cache)
 			if !cached && len(entries) != 0 {
 				t.Fatal("cancel published a partial extraction")
+			}
+			if !cached {
+				if _, err := Prepare(archive, cache, Platform(), ""); err != nil {
+					t.Fatal("could not retry after cancellation:", err)
+				}
 			}
 			if cached {
 				if _, err := Prepare(archive, cache, Platform(), ""); err != nil {
