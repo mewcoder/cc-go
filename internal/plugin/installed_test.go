@@ -39,12 +39,6 @@ func TestInstalledExtensionDirectories(t *testing.T) {
 	if got := VSCodeExtensionDirectories(home, "relative-workspace-data"); !reflect.DeepEqual(got, want[1:]) {
 		t.Fatal("relative portable paths must not load code from the workspace:", got)
 	}
-	if got := VSCodeExtensionDirectories("", ""); len(got) != 0 {
-		t.Fatal("missing home must not load plugins from relative directories:", got)
-	}
-	if got := VSCodeExtensionDirectories("", portable); !reflect.DeepEqual(got, want[:1]) {
-		t.Fatal("portable discovery should still work without home:", got)
-	}
 }
 
 func TestReuseInstalledCreatesAnIndependentVerifiedCopyOnMacAndWindows(t *testing.T) {

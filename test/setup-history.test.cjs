@@ -352,20 +352,18 @@ test('failed local reuse restores the download link even with a saved VS Code so
   assert.equal(card.querySelector('.setup-step-error').textContent, 'Invalid VSIX');
 });
 
-test('local import can be cancelled without enabling concurrent retry or import', async () => {
+test('local import stays busy without a cancel button or concurrent actions', () => {
   const h = setupHarness();
-  Object.assign(h.state.pluginSetup, { status: 'checking-installed', readyVersion: '', runtimeReady: false, step: 1, canCancel: true });
+  Object.assign(h.state.pluginSetup, { status: 'checking-installed', readyVersion: '', runtimeReady: false, step: 1, canCancel: false });
   h.render();
   const actions = h.byID('setup-steps').children[1].querySelector('.setup-actions');
   const cancel = actions.children.find(child => child.textContent === 'Cancel');
   const update = actions.children.at(-1);
-  assert.equal(cancel.hidden, false);
-  assert.equal(cancel.disabled, false);
+  assert.equal(cancel.hidden, true);
   assert.equal(update.textContent, 'Checking VS Code…');
   assert.equal(update.disabled, true);
   assert.equal(h.byID('setup-import').hidden, true);
-  await cancel.onclick();
-  assert.deepEqual(h.calls, ['cancel-download']);
+  assert.deepEqual(h.calls, []);
 });
 
 test('initial setup shows ready status instead of update controls or update messages', () => {

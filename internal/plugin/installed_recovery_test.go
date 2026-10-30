@@ -22,26 +22,6 @@ func (c checkingContext) Err() error {
 	return c.Context.Err()
 }
 
-func TestObsoleteReadRetriesTransientTruncationWithoutIgnoringEntries(t *testing.T) {
-	filename := filepath.Join(t.TempDir(), ".obsolete")
-	if err := os.WriteFile(filename, []byte("{"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	checks := 0
-	ctx := checkingContext{t.Context(), func() {
-		checks++
-		if checks == 2 {
-			if err := os.WriteFile(filename, []byte(`{"anthropic.claude-code-2.1.312":true}`), 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}}
-	obsolete, err := readObsolete(ctx, filename)
-	if err != nil || !obsolete["anthropic.claude-code-2.1.312"] || checks < 2 {
-		t.Fatal("transient rewrite was not retried or obsolete entry was ignored:", obsolete, err)
-	}
-}
-
 func TestInstalledDiscoveryReportsReadFailuresButIgnoresMissingDirectories(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(root, []byte("file"), 0600); err != nil {

@@ -161,7 +161,7 @@
   cards[1].actions.append(update);
   const cancel = create('button', '', 'Cancel');
   cancel.type = 'button';
-  cancel.setAttribute('aria-label', 'Cancel operation');
+  cancel.setAttribute('aria-label', 'Cancel download');
   cancel.onclick = async () => {
     if (cancel.disabled) return;
     cancel.disabled = true;

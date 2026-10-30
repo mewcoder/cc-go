@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // Installed directories are executable code trusted by the current user, just
@@ -26,10 +25,7 @@ type Installed struct {
 }
 
 func VSCodeExtensionDirectories(home, portable string) []string {
-	var roots []string
-	if home != "" {
-		roots = append(roots, filepath.Join(home, ".vscode", "extensions"), filepath.Join(home, ".vscode-insiders", "extensions"))
-	}
+	roots := []string{filepath.Join(home, ".vscode", "extensions"), filepath.Join(home, ".vscode-insiders", "extensions")}
 	if filepath.IsAbs(portable) {
 		roots = append([]string{filepath.Join(portable, "extensions")}, roots...)
 	}
@@ -53,7 +49,7 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 			}
 			continue
 		}
-		obsolete, err := readObsolete(ctx, filepath.Join(root, ".obsolete"))
+		obsolete, err := readObsolete(filepath.Join(root, ".obsolete"))
 		if err != nil {
 			failures = append(failures, err)
 			continue
@@ -113,48 +109,27 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 	return Installed{}, errors.Join(failures...)
 }
 
-func readObsolete(ctx context.Context, filename string) (map[string]bool, error) {
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		obsolete := make(map[string]bool)
-		file, err := os.Open(filename)
-		if os.IsNotExist(err) {
-			return obsolete, nil
-		}
-		if err == nil {
-			var b []byte
-			b, err = io.ReadAll(io.LimitReader(file, (1<<20)+1))
-			closeErr := file.Close()
-			if err == nil {
-				err = closeErr
-			}
-			if err == nil && len(b) > 1<<20 {
-				err = errors.New("obsolete list exceeds 1 MiB")
-			}
-			if err == nil {
-				err = json.Unmarshal(b, &obsolete)
-			}
+func readObsolete(filename string) (map[string]bool, error) {
+	obsolete := make(map[string]bool)
+	file, err := os.Open(filename)
+	if os.IsNotExist(err) {
+		return obsolete, nil
+	}
+	if err == nil {
+		defer file.Close()
+		var b []byte
+		b, err = io.ReadAll(io.LimitReader(file, (1<<20)+1))
+		if err == nil && len(b) > 1<<20 {
+			err = errors.New("obsolete list exceeds 1 MiB")
 		}
 		if err == nil {
-			return obsolete, nil
-		}
-		lastErr = err
-		if attempt < 2 {
-			// VS Code may be replacing this file. Retry briefly, but never treat an
-			// unreadable list as empty and accidentally revive an obsolete plugin.
-			timer := time.NewTimer(50 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, ctx.Err()
-			case <-timer.C:
-			}
+			err = json.Unmarshal(b, &obsolete)
 		}
 	}
-	return nil, fmt.Errorf("read VS Code obsolete list %s: %w", filename, lastErr)
+	if err != nil {
+		return nil, fmt.Errorf("read VS Code obsolete list %s: %w", filename, err)
+	}
+	return obsolete, nil
 }
 
 // Check existing ancestors too: the data directory may not exist yet, or its
