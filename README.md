@@ -32,7 +32,7 @@ Claude Code 的 VS Code 插件挺好用，但我不想在 VS Code 里用它。�
 ## 日常使用
 
 - 左侧管理项目和会话，可以导入已有 Claude Code CLI 会话。
-- 关闭窗口后保留后台运行；托盘右键只有 **Show App** 和 **Exit**，选择 Exit 才完全退出。
+- 关闭窗口后保留后台运行；托盘右键只有 **Show** 和 **Exit**，选择 Exit 才完全退出。
 - Git 状态按文件变化更新，不定时轮询 Git；也可以通过 **View > Refresh Git** 手动刷新。
 
 ## 开发预览
