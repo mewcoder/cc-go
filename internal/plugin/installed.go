@@ -44,7 +44,13 @@ func ReuseInstalled(ctx context.Context, roots []string, archives, cache, platfo
 		}
 		entries, err := os.ReadDir(root)
 		if err != nil {
-			if !os.IsNotExist(err) {
+			missing := os.IsNotExist(err)
+			if missing {
+				// Windows also reports PATH_NOT_FOUND when root is a regular file.
+				_, statErr := os.Stat(root)
+				missing = os.IsNotExist(statErr)
+			}
+			if !missing {
 				failures = append(failures, fmt.Errorf("read VS Code extensions directory: %w", err))
 			}
 			continue
