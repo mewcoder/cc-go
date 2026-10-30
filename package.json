@@ -1,6 +1,6 @@
 {
   "name": "cc-go",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "private": true,
   "description": "Go/MyGo desktop host for the original Claude Code VS Code extension (.vsix)",
   "scripts": {
