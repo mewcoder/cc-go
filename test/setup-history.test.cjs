@@ -324,6 +324,23 @@ test('retry controls remain text buttons in the right-side actions, not version 
   assert.equal(h.byID('setup-retry').hidden, true);
 });
 
+test('local reuse shows its source beside the version and hides the download link', () => {
+  const h = setupHarness();
+  h.state.pluginSetup.source = 'vscode';
+  h.window.__goRenderSetup(h.state);
+  const card = h.byID('setup-steps').children[1];
+  const hint = card.querySelector('.setup-card-description');
+  const link = card.querySelector('.setup-plugin-link');
+  assert.equal(hint.textContent, 'From VS Code');
+  assert.equal(hint.hidden, false);
+  assert.equal(link.hidden, true);
+  assert.equal(card.querySelector('.setup-card-version').textContent, '2.1.312');
+  h.state.pluginSetup.source = '';
+  h.window.__goRenderSetup(h.state);
+  assert.equal(hint.hidden, true);
+  assert.equal(link.hidden, false);
+});
+
 test('initial setup shows ready status instead of update controls or update messages', () => {
   const h = setupHarness();
   Object.assign(h.state.pluginSetup, { latestVersion: '2.1.312' });

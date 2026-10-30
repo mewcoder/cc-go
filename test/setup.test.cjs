@@ -88,3 +88,13 @@ test('updating an installed plugin stays visibly busy rather than already ready'
   assert.equal(view.cards[1].kind, 'busy');
   assert.equal(view.cards[1].label, 'Downloading');
 });
+
+test('local discovery stays busy and readiness identifies the VS Code source', () => {
+  const checking = setupView(state({ ...node, status: 'checking-installed', step: 1 }));
+  assert.equal(checking.busy, true);
+  assert.equal(checking.busyLabel, 'Checking VS Code…');
+  assert.equal(checking.cards[1].kind, 'busy');
+  const ready = setupView(state({ ...plugin, runtimeReady: true, source: 'vscode', status: 'ready', step: 1 }));
+  assert.equal(ready.cards[1].description, 'From VS Code');
+  assert.equal(ready.cards[1].version, '2.1.312');
+});

@@ -58,6 +58,7 @@ func (a *App) snapshot() map[string]any {
 		result["phase"] = "setup"
 	}
 	setup := result["pluginSetup"].(map[string]any)
+	setup["source"] = a.state.ArchiveSource
 	setup["targetVersion"] = a.download.Version
 	setup["received"] = a.download.Received
 	setup["total"] = a.download.Total

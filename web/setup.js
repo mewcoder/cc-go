@@ -8,7 +8,7 @@
     const nodeReady = Boolean(setup.nodeVersion);
     const step = Number.isInteger(setup.step) ? Math.min(1, Math.max(0, setup.step)) : 0;
     const status = setup.status;
-    const busy = ['detecting-node', 'downloading', 'cancelling', 'extracting', 'checking-runtime', 'reloading'].includes(status)
+    const busy = ['detecting-node', 'checking-installed', 'downloading', 'cancelling', 'extracting', 'checking-runtime', 'reloading'].includes(status)
       || state.phase === 'activating';
     const error = setup.nodeError || setup.error || '';
     const pluginReady = Boolean(setup.readyVersion || state.extension?.version);
@@ -23,7 +23,7 @@
         : received ? `${size(received)} · ${speed}` : '' : '';
     const busyLabel = status === 'cancelling' ? 'Cancelling…' : state.phase === 'activating' || status === 'reloading' ? 'Starting…'
       : status === 'downloading' ? setup.verifying ? 'Verifying…' : setup.targetVersion ? 'Downloading…' : 'Checking…'
-        : status === 'extracting' ? 'Extracting…' : 'Checking…';
+        : status === 'checking-installed' ? 'Checking VS Code…' : status === 'extracting' ? 'Extracting…' : 'Checking…';
     const cards = [
       { kind: nodeReady ? 'ready' : status === 'detecting-node' ? 'busy' : 'waiting',
         label: nodeReady ? 'Ready' : status === 'detecting-node' ? 'Checking' : 'Pending',
@@ -31,6 +31,7 @@
         description: [system, !nodeReady && 'Node.js 22+'].filter(Boolean).join(' · ') },
       { kind: nodeReady && step === 1 && busy ? 'busy' : pluginReady && runtimeReady ? 'ready' : 'waiting',
         label: status === 'downloading' ? setup.verifying ? 'Verifying' : 'Downloading' : nodeReady && step === 1 && busy ? 'Preparing' : pluginReady && runtimeReady ? 'Ready' : 'Pending',
+        description: setup.source === 'vscode' && pluginReady && runtimeReady && !busy ? 'From VS Code' : '',
         version: status === 'downloading' ? setup.targetVersion || '' : setup.readyVersion || state.extension?.version || '' },
     ];
     if (error) {
@@ -238,8 +239,8 @@
       text(card.version, current.version);
       card.version.hidden = !current.version;
       if (index === 0) text(retry, view.busy && !view.nodeReady ? 'Checking…' : 'Retry');
-      if (index === 0) text(card.hint, current.description);
-      card.hint.hidden = !card.hint.textContent || index !== 0 && current.kind === 'ready';
+      text(card.hint, current.description || '');
+      card.hint.hidden = !card.hint.textContent;
       card.details.hidden = card.version.hidden && card.hint.hidden;
       card.status.hidden = index === 0 ? !view.nodeReady : !initialReady;
       const error = current.error || actionErrors[index];
@@ -247,6 +248,7 @@
       card.error.hidden = !error;
     });
     cards[0].version.title = setup.nodePath || '';
+    cards[1].row.querySelector('.setup-plugin-link').hidden = setup.source === 'vscode';
     retry.hidden = view.nodeReady;
     $('setup-select-cli').hidden = true;
     install.hidden = true;

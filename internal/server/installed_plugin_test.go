@@ -56,6 +56,9 @@ func TestFirstSetupReusesInstalledVSCodePluginOfflineAndKeepsPrivateCopy(t *test
 	if !strings.HasPrefix(archive, filepath.Join(dataDir, "vsix")+string(filepath.Separator)) || persistedState(t, a).Archive != archive {
 		t.Fatal("initialization did not persist a private archive:", archive)
 	}
+	if a.snapshot()["pluginSetup"].(map[string]any)["source"] != "vscode" || persistedState(t, a).ArchiveSource != "vscode" {
+		t.Fatal("local reuse provenance is missing from setup or saved state")
+	}
 	if err := os.RemoveAll(source); err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +72,16 @@ func TestFirstSetupReusesInstalledVSCodePluginOfflineAndKeepsPrivateCopy(t *test
 	a.mu.Unlock()
 	if !unchanged {
 		t.Fatal("returning setup unexpectedly imported a different installed plugin")
+	}
+	if a.snapshot()["pluginSetup"].(map[string]any)["source"] != "vscode" {
+		t.Fatal("using the saved copy lost its VS Code provenance")
+	}
+	// Explicit imports replace the provenance even when they select the same file.
+	if err := a.prepare(t.Context(), archive); err != nil {
+		t.Fatal(err)
+	}
+	if a.snapshot()["pluginSetup"].(map[string]any)["source"] != "" || persistedState(t, a).ArchiveSource != "" {
+		t.Fatal("explicit import kept stale VS Code provenance")
 	}
 }
 
@@ -121,6 +134,9 @@ func TestInstalledVSCodePluginFallbackDownloadsLatestStable(t *testing.T) {
 	a.mu.Unlock()
 	if !downloaded || *requests != 3 {
 		t.Fatal("fallback did not use the normal verified registry download")
+	}
+	if a.snapshot()["pluginSetup"].(map[string]any)["source"] != "" {
+		t.Fatal("download fallback was incorrectly labelled as local reuse")
 	}
 }
 

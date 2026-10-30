@@ -52,6 +52,7 @@ type DesktopState struct {
 	Theme            string                       `json:"theme"`
 	Metadata         map[string]sessions.Metadata `json:"metadata"`
 	Archive          string                       `json:"archive,omitempty"`
+	ArchiveSource    string                       `json:"archiveSource,omitempty"`
 	Claude           string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
 	Node             string                       `json:"node,omitempty"`
 	SetupComplete    bool                         `json:"setupComplete,omitempty"`
@@ -403,6 +404,10 @@ func (a *App) failLocked(err error) {
 func (a *App) prepare(ctx context.Context, archive string) error {
 	a.mu.Lock()
 	rememberedArchive := archive == "" && a.state.Archive != ""
+	archiveSource := ""
+	if rememberedArchive {
+		archiveSource = a.state.ArchiveSource
+	}
 	a.phase, a.label, a.errorText = "preparing", "Checking Node.js", ""
 	if !a.state.SetupComplete {
 		a.pluginSetupOpen = true
@@ -430,13 +435,14 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	if rememberedArchive {
 		if _, err := os.Stat(archive); os.IsNotExist(err) {
 			archive = ""
+			archiveSource = ""
 		}
 	}
 	expectedVersion := ""
 	var prepared *plugin.Prepared
 	if archive == "" {
 		a.mu.Lock()
-		a.label = "Checking installed VS Code extension"
+		a.setupStatus, a.label = "checking-installed", "Checking installed VS Code extension"
 		a.mu.Unlock()
 		installed, err := plugin.ReuseInstalled(ctx, a.cfg.VSCodeExtensionsDirs, filepath.Join(a.cfg.DataDir, "vsix"), filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform())
 		if ctx.Err() != nil {
@@ -447,6 +453,7 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 		}
 		archive, prepared = installed.Archive, installed.Prepared
 		if prepared != nil {
+			archiveSource = "vscode"
 			a.Log("info", "Reusing installed VS Code extension: Claude Code "+fmt.Sprint(prepared.PackageJSON["version"]))
 		}
 	}
@@ -481,6 +488,7 @@ func (a *App) prepare(ctx context.Context, archive string) error {
 	a.mu.Lock()
 	a.prepared, a.runtimePath = prepared, runtimePath
 	a.state.Archive, _ = filepath.Abs(archive)
+	a.state.ArchiveSource = archiveSource
 	err = a.saveLocked()
 	if err == nil {
 		a.phase, a.label, a.setupStatus = "setup", "Ready to start", "ready"
