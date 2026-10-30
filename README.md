@@ -1,8 +1,12 @@
 # CC Go
 
-用 Go / MyGo 运行 Claude Code 官方 VS Code 插件的轻量桌面客户端。
+基于 [MyGo](https://github.com/egoist/mygo) 的桌面客户端，用于运行 Claude Code 官方 VS Code 插件。
 
 这是非官方宿主，不是 Claude 官方桌面端，也不是完整的 VS Code。项目仍在测试阶段，适合愿意反馈问题的用户。
+
+## 背景
+
+Claude Code 的 VS Code 插件挺好用，但我不想在 VS Code 里用它。所以做了 CC Go，让插件在独立的桌面窗口里运行，继续使用熟悉的界面和交互，不必为了聊天打开编辑器。
 
 ## 下载与使用
 
