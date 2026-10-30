@@ -61,7 +61,7 @@ async function publishRelease({ github, context, root = path.resolve(__dirname, 
   if (!release) {
     release = (await github.rest.repos.createRelease({ ...repo, tag_name: tag, target_commitish: context.sha,
       name: `CC Go ${tag}`, draft: true, prerelease, generate_release_notes: true,
-      body: '支持 macOS Apple Silicon（DMG）和 Windows x64（EXE）。需要本机 Node.js 22+；首次启动自动下载 Claude VSIX，使用插件内置 Claude。\n\n当前为测试阶段：Mac 仅临时签名、未公证，Windows 未做发行者代码签名。下载后可用 SHA256SUMS 校验。' })).data;
+      body: '支持 macOS Apple Silicon（DMG）和 Windows x64（EXE）。需要本机 Node.js 22+；首次启动优先复用 VS Code 已安装的稳定版 Claude 插件，没有可用插件时自动下载，使用插件内置 Claude。\n\n当前为测试阶段：Mac 仅临时签名、未公证，Windows 未做发行者代码签名。下载后可用 SHA256SUMS 校验。' })).data;
   }
   const release_id = release.id;
   // A failed run leaves a draft. A retry replaces only that draft's assets;
