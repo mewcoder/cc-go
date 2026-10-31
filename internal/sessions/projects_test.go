@@ -62,6 +62,39 @@ func TestDiscoverMissingProjectsIsEmpty(t *testing.T) {
 	}
 }
 
+func TestDiscoverIgnoresSDKOnlyProjectsAndSDKRecency(t *testing.T) {
+	projects := t.TempDir()
+	for _, sdkOnly := range []bool{false, true} {
+		workspace := t.TempDir()
+		directory := filepath.Join(projects, ProjectDirectory(workspace))
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, sdk := range []bool{false, true} {
+			if sdkOnly && !sdk {
+				continue
+			}
+			id, entrypoint, updated := "11111111-1111-1111-1111-111111111111", "cli", int64(1000)
+			if sdk {
+				id, entrypoint, updated = "22222222-2222-2222-2222-222222222222", "sdk-cli", 5000
+			}
+			row, _ := json.Marshal(map[string]string{"cwd": workspace, "entrypoint": entrypoint})
+			filename := filepath.Join(directory, id+".jsonl")
+			if err := os.WriteFile(filename, row, 0600); err != nil {
+				t.Fatal(err)
+			}
+			stamp := time.UnixMilli(updated)
+			if err := os.Chtimes(filename, stamp, stamp); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	items, err := Discover(projects)
+	if err != nil || len(items) != 1 || items[0].UpdatedAt != 1000 {
+		t.Fatalf("SDK history affected project discovery: %+v, %v", items, err)
+	}
+}
+
 func TestDiscoverSortsByNewestValidTranscript(t *testing.T) {
 	projects, root := t.TempDir(), t.TempDir()
 	write := func(path, id, contents string, updatedAt int64) {

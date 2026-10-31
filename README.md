@@ -27,13 +27,17 @@ Claude Code 的 VS Code 插件挺好用，但我不想在 VS Code 里用它。�
 
 **不需要另装 Claude CLI**：使用 VSIX 自带的 Claude。首次初始化后，再次启动直接进入应用；在菜单的 Plugin Updates 中检查和安装插件更新。插件更新与 CC Go 自身的版本分开，桌面程序更新请从 Releases 下载。
 
+后台检查只获取版本信息，不预下载。出现升级按钮后，点击即可下载、校验并自动应用，无需再次打开更新页确认。新版成功启动后自动清理旧安装包和解压缓存；失败时保留旧版并尝试恢复运行。正常启动成功后也会补清理历史缓存，不删除聊天记录、配置或用户导入的原始 VSIX 文件。
+
 本地复用会检查标准 VS Code、Insiders 及 `VSCODE_PORTABLE` 数据目录中的插件，校验身份、平台和内置运行时后导入 CC Go 自己的副本，不修改 VS Code 的安装。之后继续使用已保存的副本，不受 VS Code 升级或卸载影响；显式指定的 `--vsix` 优先。
 
 ## 日常使用
 
-- 左侧管理项目和会话，可以导入已有 Claude Code CLI 会话。
+- Settings 中的 **Theme** 统一控制侧边栏、插件页面、代码块和 Diff 配色。除 Default 外，内置 GitHub、Pierre、VS Code、One、Vitesse、Catppuccin、Solarized、Min、Rosé Pine 共 9 组浅深配对主题。侧边栏深浅快捷切换保留当前主题组，选择即时生效并在重启后保留。One 使用标准 One Light / One Dark，不含 Pro；Vitesse 使用官方 Vitesse Light / Vitesse Dark。所有主题离线可用；Monaco 与 TextMate 分词不同，部分语言的细节配色可能与 Claude Desktop 有差异。
+- 左侧 Project 旁的 `...` 菜单可导入已有 Claude Code CLI 会话，切换分项目/合并显示，以及最近更新/手动排序。手动模式下可拖拽会话，或聚焦会话后按 Alt+上下方向键调整；分项目模式只在同一项目内排序。选择与顺序会保存，重启后保留。
+- 项目默认按添加顺序显示，分项目模式下可拖拽项目行，或聚焦项目名后按 Alt+上下方向键调整顺序；项目顺序与会话排序独立，新项目追加在末尾。
 - 关闭窗口后保留后台运行；托盘右键只有 **Show** 和 **Exit**，选择 Exit 才完全退出。
-- Git 状态按文件变化更新，不定时轮询 Git；也可以通过 **View > Refresh Git** 手动刷新。
+- Git 状态按文件变化更新，不定时轮询 Git；也可以通过 **View > Refresh Git** 手动刷新。点击底部 Git 增删行数可查看改动文件列表和相对 HEAD 的只读 Diff，包含暂存、未暂存和未跟踪文件。Diff 展示复用随应用打包的 diff2html，离线可用，配色跟随当前主题。
 
 ## 开发预览
 
@@ -52,6 +56,17 @@ npm test
 npm start
 npm run build
 ```
+
+桌面模式的插件消息经过隔离 iframe 的 MessagePort，由可信宿主页面转发给 MyGo 原生 IPC；不为每个会话维持 WS/SSE 连接，也不自行实现 ACK 或重放协议。`--web` 开发预览仍使用 WebSocket。
+
+真实 VSIX 多会话回归可在桌面登录会话中手动运行（需要可信的本地官方 VSIX）：
+
+```sh
+CGO_ENABLED=0 scripts/go.sh test -c -tags=native_views_smoke -o /tmp/cc-go-native-vsix-smoke.test ./internal/desktop
+CC_GO_NATIVE_VSIX_SMOKE=1 CC_GO_SMOKE_VSIX=/absolute/path/to/claude.vsix /tmp/cc-go-native-vsix-smoke.test
+```
+
+该测试在临时应用数据和 Claude 配置目录中创建 12 份合成历史，验证内容渲染、会话切换、页面重载、后台主题/宽度更新及关闭。它不发送模型消息、不改动当前运行的应用，结果截图和日志保留在输出的临时目录。
 
 构建结果在 `release/`：Mac ARM64 生成 DMG，Windows x64 生成 EXE，各附 `.sha256`；Mac 同时保留 `build/CC Go.app`。打包使用 Node，不依赖 PowerShell 模块或外部哈希工具。Mac 打包会提前检查系统 `codesign`、`hdiutil`，签名或镜像校验失败就停止。
 

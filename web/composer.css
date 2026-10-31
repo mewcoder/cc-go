@@ -1,5 +1,12 @@
-/* Keep room below the floating composer without adding a document-flow row. */
-[data-claude-host-composer-anchor] { translate: 0 -12px; }
+/* Keep the VSIX's empty error sentinel from taking a 1px flex column. */
+:root body > #claude-error:empty { position: absolute; }
+
+/* Session creation and history search are available in the desktop sidebar. */
+:root [class*="header_"] button[aria-label="New session"],
+:root [class*="header_"] button[aria-label="Session history"] { display: none; }
+
+/* Leave room below the composer without trapping its fixed-position dialogs. */
+:root [data-claude-host-composer-anchor] { bottom: 28px; }
 
 /* Limit the columns, not the webview or the transcript's scroll area. */
 :root [data-claude-host-composer-anchor],

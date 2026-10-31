@@ -41,7 +41,12 @@ const send = message => {
       return;
     }
   }
-  if (message.kind === 'event' && message.method === 'webview.dispose') contextQueries.disconnect(message.args.id);
+  if (message.kind === 'event' && message.method === 'webview.dispose') {
+    contextQueries.disconnect(message.args.id);
+    if (tracker.disconnect(message.args.id)) {
+      send({ kind: 'event', method: 'host.sessions', args: { sessions: [...tracker.sessions.values()] } });
+    }
+  }
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
 global.console = new Console(process.stderr, process.stderr);
@@ -76,6 +81,18 @@ peer.handle('activate', async options => {
 peer.handle('command', async ({ command, args = [] }) => {
   if (!host?.context.extension.isActive) throw new Error('The extension has not activated');
   await host.vscode.commands.executeCommand(command, ...args);
+});
+peer.handle('conversation.open', async ({ sessionId, viewId }) => {
+  if (!host?.context.extension.isActive) throw new Error('The extension has not activated');
+  // Plugin New keeps earlier sessions in the page after its visible session changes.
+  const owners = new Set([...tracker.channels.values()]
+    .filter(channel => channel.workspace === workspace && channel.sessionId === sessionId)
+    .map(channel => channel.viewId));
+  if (viewId) owners.add(viewId);
+  for (const id of owners) {
+    if (await host.activateSession(id, sessionId)) return;
+  }
+  await host.vscode.commands.executeCommand('claude-vscode.editor.open', sessionId);
 });
 peer.handle('settings.get', async () => {
   if (!host?.context.extension.isActive) throw new Error('The extension has not activated');

@@ -13,8 +13,14 @@ test('global new chat is permanently above the workspace heading with a quiet pl
   assert.ok(html.indexOf('id="new-chat"') < html.indexOf('class="sidebar-header"'));
   assert.ok(html.indexOf('class="sidebar-header"') < html.indexOf('id="workspace-list"'));
   assert.match(source, /ui\.newChat\.replaceChildren\(icon\('plus'\)/);
-  assert.match(css, /\.sidebar-new-chat[^}]*border: 1px solid var\(--shell-border\);/);
+  assert.match(css, /\.sidebar-new-chat[^}]*border: 1px solid color-mix\(in srgb, var\(--vscode-foreground\) 12%, transparent\);[^}]*background: transparent;/);
   assert.match(css, /\.sidebar \.sidebar-new-chat:hover:not\(:disabled\)[^}]*var\(--shell-hover-background\)/);
+});
+
+test('New Chat shares a transparent fill and subtle themed border across light and dark themes', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
+  assert.doesNotMatch(css, /body\[data-theme="light"\][^{]*\.sidebar-new-chat/);
+  assert.match(css, /\.sidebar \.sidebar-new-chat:hover:not\(:disabled\) \{ border-color: color-mix\(in srgb, var\(--vscode-foreground\) 20%, transparent\); background: var\(--shell-hover-background\); \}/);
 });
 
 test('global new chat delegates automatic workspace choice and Cmd+N shares its pending guard', () => {
@@ -40,11 +46,11 @@ test('new chat aligns with project rows and keeps the workspace heading compact 
   const rule = css.match(/(?:^|\n)\.sidebar-new-chat \{([^}]+)\}/)[1];
   assert.match(shell, /\.workspace-list \{[^}]*padding: 0 6px 8px;/);
   assert.match(shell, /\.workspace-open \{[^}]*gap: 8px;[^}]*padding: 0 6px;/);
-  assert.match(rule, /margin: 4px 6px 0;/);
+  assert.match(rule, /margin: 4px var\(--shell-sidebar-inset\) 8px;/);
   assert.match(shell, /button \{[^}]*border: 1px solid transparent;/);
   assert.match(rule, /padding: 0 6px;/);
   assert.match(rule, /gap: 8px;/);
   assert.match(rule, /min-height: 28px;/);
-  assert.match(css, /:root \.sidebar-header \{ flex-basis: 36px; padding-left: 13px; \}/);
-  assert.match(css, /\.sidebar-header h2 \{ font-size: 11px; \}/);
+  assert.match(css, /:root \.sidebar-header \{ flex-basis: 36px; padding: 0 var\(--shell-sidebar-inset\) 0 var\(--shell-sidebar-content-inset\); \}/);
+  assert.match(css, /\.sidebar-header h2 \{ font-size: var\(--vscode-chat-font-size, 12px\);[^}]*text-transform: none;[^}]*\}/);
 });

@@ -290,9 +290,9 @@
     cards[1].details.hidden = cards[1].version.hidden && cards[1].hint.hidden && updateStatus.hidden && saveWarning.hidden;
     const indicator = $('plugin-update');
     if (indicator) {
-      indicator.hidden = state.phase !== 'active' || !updateAvailable;
+      indicator.hidden = !(state.phase === 'active' && updateAvailable || state.setupComplete && view.busy);
       indicator.disabled = view.busy;
-      indicator.title = `Update plugin to ${setup.latestVersion || ''}`;
+      indicator.title = view.busy ? [view.busyLabel, view.progressText].filter(Boolean).join(' ') : `Update plugin to ${setup.latestVersion || ''}`;
       indicator.setAttribute('aria-label', indicator.title);
     }
     canStart = Boolean(state.setupCanStart) && !view.busy;

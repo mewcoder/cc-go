@@ -76,7 +76,8 @@ test('startup setup closes through the same native window lifecycle as the title
 
 test('MyGo migration keeps HTTP APIs and does not expose services to extension frames', () => {
   assert.match(desktop, /TrustedOrigins: \[\]string\{shellURL\}/);
-  assert.doesNotMatch(desktop, /mygo\.Bind|PreloadAllFrames: true|TrustedOrigins:.*"\*"/);
+  assert.match(desktop, /mygo\.Bind\(&ViewBridge\{backend: backend\}\)/);
+  assert.doesNotMatch(desktop, /mygo\.Bind\(backend\)|PreloadAllFrames: true|TrustedOrigins:.*"\*"/);
   assert.match(desktop, /OnWillNavigate[\s\S]*?sameOrigin[\s\S]*?PreventDefault/);
   assert.match(desktop, /SetWindowOpenHandler.*return nil/);
   assert.match(read('web/host.css'), /\.window-drag \{ --app-region: drag; \}/);

@@ -34,3 +34,15 @@ test('Windows distribution is a GUI executable, not a ZIP with adjacent JS modul
   assert.ok(script.includes("crypto.createHash('sha256')"));
   assert.doesNotMatch(script, /Get-FileHash|shasum|sha256sum|Compress-Archive|Copy-Item.*node_modules/);
 });
+
+test('the offline Diff renderer embeds the pinned upstream bundles and license unchanged', () => {
+  const directory = path.join(root, 'web', 'vendor', 'diff2html');
+  const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'));
+  assert.equal(manifest.version, dependencies.diff2html);
+  for (const file of ['bundles/js/diff2html.min.js', 'bundles/css/diff2html.min.css', 'LICENSE.md']) {
+    assert.deepEqual(fs.readFileSync(path.join(directory, path.basename(file))),
+      fs.readFileSync(path.join(root, 'node_modules', 'diff2html', file)));
+  }
+  for (const filename of ['LICENSE-jsdiff', 'LICENSE-hogan']) assert.ok(fs.existsSync(path.join(directory, filename)));
+  assert.match(fs.readFileSync(path.join(directory, 'NOTICE-hogan'), 'utf8'), /Copyright 2011 Twitter, Inc\./);
+});

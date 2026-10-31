@@ -9,11 +9,12 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
-function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linux' } = {}) {
+function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linux', native = false } = {}) {
   const attributes = new Map();
   const handlers = new Map();
   const events = new Map();
-  const calls = [], errors = [], frames = [];
+  const calls = [], errors = [], frames = [], panels = [], timers = new Map();
+  let timerID = 0;
   const connection = {
     setAttribute: (key, value) => attributes.set(key, value),
     addEventListener: (key, fn) => handlers.set(key, fn),
@@ -23,17 +24,20 @@ function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linu
   let failLogs = false, blockLogs, failDrafts = false;
   const window = {
     __goDesktopConfig: { platform, token: 'fixture', nativeExternalLinks },
+    mygo: native ? {} : undefined,
     addEventListener: (key, fn) => events.set(key, fn),
     goHUD: { gap: 4, height: 20, create: () => ({ render() {}, layout() {}, setDraft() {} }) },
   };
   vm.runInNewContext(source, {
     window, document: {
-      body: mounted ? { append: frame => frames.push(frame) } : null,
-      createElement: () => ({ dataset: {}, style: {}, contentWindow: { messages: [], postMessage(message, origin) { this.messages.push({ message, origin }); } }, setAttribute() {}, remove() {} }),
+      documentElement: { style: { setProperty() {} } },
+      body: mounted ? { append: element => (element.tag === 'iframe' ? frames : panels).push(element) } : null,
+      createElement: tag => ({ tag, dataset: {}, style: {}, handlers: {}, children: [], append(...children) { this.children.push(...children); }, addEventListener(type, callback) { this.handlers[type] = callback; }, contentWindow: { messages: [], postMessage(message, origin) { this.messages.push({ message, origin }); } }, setAttribute() {}, remove() { this.removed = true; } }),
       getElementById: () => connection,
     },
     URL, innerWidth: 1200, innerHeight: 820,
-    setTimeout: () => 1, clearTimeout() {},
+    setTimeout(callback, delay) { timers.set(++timerID, { callback, delay }); return timerID; },
+    clearTimeout(id) { timers.delete(id); },
     console: { error: (...args) => errors.push(args) },
     fetch: async (url, options) => {
       const body = options.body && JSON.parse(options.body);
@@ -48,14 +52,14 @@ function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linu
     },
   });
   return {
-    window, connection, attributes, handlers, calls, state, errors, frames,
+    window, connection, attributes, handlers, calls, state, errors, frames, panels, timers,
     async load() { events.get('DOMContentLoaded')(); await settle(); },
     set failLogs(value) { failLogs = value; },
     set blockLogs(value) { blockLogs = value; },
     set failDrafts(value) { failDrafts = value; },
-    composer(index, hasDraft, origin = 'http://127.0.0.1:23457') {
+    composer(index, hasDraft, origin = 'http://127.0.0.1:23457', rect = null, loading = false, loadingRect = null, geometry = {}) {
       events.get('message')({ source: frames[index].contentWindow, origin,
-        data: { type: 'claude-host:composer', rect: null, hasDraft, viewport: { width: 948, height: 820 } } });
+        data: { type: 'claude-host:composer', rect, hasDraft, loading, loadingRect, viewport: { width: 952, height: 820 }, ...geometry } });
     },
     transport(index, sequence, connected, origin = 'http://127.0.0.1:23457') {
       events.get('message')({ source: frames[index].contentWindow, origin,
@@ -64,6 +68,44 @@ function desktopHarness({ mounted = false, nativeExternalLinks, platform = 'linu
     logCalls: () => calls.filter(call => call.body?.key === 'logs'),
   };
 }
+
+test('native titlebar handles follow the plugin header without covering settings or stale layouts', async () => {
+  const h = desktopHarness({ mounted: true, native: true, platform: 'darwin' });
+  Object.assign(h.state, { phase: 'active', views: [{ id: 'one', active: true, ready: true, revision: 1,
+    url: 'http://127.0.0.1:23457/view/one/token/index.html' }] });
+  await h.load();
+  const handles = () => h.panels.filter(panel => panel.className === 'go-titlebar-drag' && !panel.removed);
+  const region = { left: 120, top: 0, width: 700, height: 32 };
+  const report = geometry => h.composer(0, false, undefined, null, false, null, geometry);
+  report({ dragRegions: [region] });
+  assert.equal(handles().length, 1);
+  assert.deepEqual({ ...handles()[0].style }, { left: '368px', top: '0px', width: '700px', height: '32px' });
+  report({ dragRegions: [{ ...region, top: 200 }] });
+  assert.equal(handles().length, 0, 'A view cannot turn message content into a native drag surface');
+  report({ dragRegions: [region] });
+  h.state.sidebarWidth = 300;
+  await h.window.desktop.getState();
+  assert.equal(handles().length, 0, 'Resize must discard geometry measured for the old viewport');
+  report({ dragRegions: [region], viewport: { width: 900, height: 820 } });
+  assert.equal(handles()[0].style.left, '420px');
+  h.state.settingsOpen = true;
+  await h.window.desktop.getState();
+  assert.equal(handles().length, 0);
+  h.state.settingsOpen = false;
+  await h.window.desktop.getState();
+  assert.equal(handles().length, 1);
+  report({ dragRegions: [] });
+  assert.equal(handles().length, 0, 'An open plugin menu must immediately uncover its header');
+});
+
+test('browser mode does not intercept the plugin header', async () => {
+  const h = desktopHarness({ mounted: true, platform: 'darwin' });
+  Object.assign(h.state, { phase: 'active', views: [{ id: 'one', active: true, ready: true, revision: 1,
+    url: 'http://127.0.0.1:23457/view/one/token/index.html' }] });
+  await h.load();
+  h.composer(0, false, undefined, null, false, null, { dragRegions: [{ left: 120, top: 0, width: 700, height: 32 }] });
+  assert.equal(h.panels.filter(panel => panel.className === 'go-titlebar-drag').length, 0);
+});
 
 test('Windows path display uppercases only drive letters without changing API paths', async () => {
   const cases = [
@@ -179,7 +221,7 @@ test('a slow background snapshot cannot restore an older conversation after an a
     addEventListener() {},
   };
   vm.runInNewContext(source, {
-    window, document: { body: null, getElementById: () => null },
+    window, document: { body: null, documentElement: { style: { setProperty() {} } }, getElementById: () => null },
     fetch: () => new Promise(resolve => replies.push(value => resolve({ ok: true, text: async () => JSON.stringify(value) }))),
   });
   window.desktop.onState(state => seen.push(state.workspace));
@@ -226,8 +268,167 @@ test('unopened idle views do not mount pages; active and background working view
   h.state.views[2].active = true;
   await h.window.desktop.getState();
   assert.equal(h.frames.length, 3);
+  assert.equal(h.frames[0].hidden, false, 'keep the previous chat until the target has content');
+  h.composer(2, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
   assert.equal(h.frames[0].hidden, true);
   assert.equal(h.frames[2].hidden, false);
+});
+
+test('silent plugin updates retain the chat through download and activation until its replacement is ready', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  const view = id => ({ id, active: true, ready: true, revision: 1,
+    url: `http://127.0.0.1:23457/view/${id}/token/index.html` });
+  h.state.views = [view('old')];
+  await h.load();
+  const oldFrame = h.frames[0];
+  let removed = false;
+  oldFrame.remove = () => { removed = true; };
+  for (const phase of ['active', 'setup', 'activating']) {
+    h.state.pluginUpdating = true;
+    h.state.phase = phase;
+    if (phase !== 'active') h.state.views = [];
+    const state = await h.window.desktop.getState();
+    assert.equal(state.pluginUpdating, true);
+    assert.equal(oldFrame.hidden, false);
+    assert.equal(oldFrame.inert, true, 'cannot add a draft to the host being replaced');
+    assert.equal(removed, false);
+  }
+  h.state.pluginUpdating = false;
+  h.state.phase = 'active';
+  h.state.viewLoading = true;
+  assert.equal((await h.window.desktop.getState()).pluginUpdating, true);
+  assert.equal(removed, false, 'retain the chat until the new view has HTML');
+  h.state.viewLoading = false;
+  h.state.views = [view('new')];
+  await h.window.desktop.getState();
+  assert.equal(removed, true);
+  assert.equal(h.frames[1].hidden, false);
+  assert.equal(h.frames[1].inert, false);
+});
+
+test('rapid chat switches retain old pixels and reveal only the latest ready target', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = ['one', 'two', 'three'].map((id, index) => ({ id, active: index === 0, ready: true, revision: 1,
+    url: `http://127.0.0.1:23457/view/${id}/token/index.html` }));
+  await h.load();
+  const ready = index => h.composer(index, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
+  ready(0);
+  const firstSource = h.frames[0].src;
+  async function select(index) {
+    h.state.views.forEach((view, i) => { view.active = i === index; });
+    await h.window.desktop.getState();
+  }
+  await select(1);
+  assert.equal(h.frames[0].hidden, false);
+  assert.equal(h.frames[0].inert, true, 'old pixels cannot accept input for the new selection');
+  assert.equal(h.frames[1].hidden, true);
+  await select(2);
+  ready(1);
+  assert.equal(h.frames[0].hidden, false, 'late readiness cannot reveal an obsolete selection');
+  assert.equal(h.frames[1].hidden, true);
+  ready(2);
+  assert.equal(h.frames[0].hidden, true);
+  assert.equal(h.frames[2].hidden, false);
+  assert.equal(h.frames[2].inert, false);
+  await select(0);
+  assert.equal(h.frames[0].hidden, false, 'cached chats switch immediately');
+  assert.equal(h.frames[0].src, firstSource, 'switching back must not reload the document');
+  assert.equal(h.frames[2].hidden, true);
+  h.state.settingsOpen = true;
+  await h.window.desktop.getState();
+  assert.ok(h.frames.every(frame => frame.hidden && frame.inert));
+});
+
+test('a stalled target replaces old pixels with an error and can retry without opening a new session', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = [{ id: 'old', active: true, ready: true, revision: 1,
+    url: 'http://127.0.0.1:23457/view/old/token/index.html' }];
+  await h.load();
+  h.state.views[0].active = false;
+  h.state.views.push({ id: 'error', active: true, ready: true, revision: 1,
+    url: 'http://127.0.0.1:23457/view/error/token/index.html' });
+  await h.window.desktop.getState();
+  assert.equal(h.frames[0].hidden, false);
+  h.timers.get(h.frames[1].loadingTimer).callback();
+  assert.equal(h.panels[0].children[0].children[0].textContent, 'Loading...');
+  assert.equal(h.panels[0].children[0].children[1].hidden, true, 'loading has no extra explanation');
+  h.timers.get(h.frames[1].revealTimer).callback();
+  assert.equal(h.frames[0].hidden, true);
+  assert.equal(h.frames[1].hidden, true);
+  const [title, detail, retry, logs] = h.panels[0].children[0].children;
+  assert.equal(title.textContent, 'Could not load this chat');
+  assert.match(detail.textContent, /saved conversation is unchanged/);
+  assert.equal(retry.hidden, false);
+  assert.equal(logs.hidden, false);
+  retry.onclick();
+  assert.match(h.frames[1].src, /view\/error\/token\/index.html\?revision=1&retry=/);
+  assert.equal(h.frames.length, 2);
+  assert.equal(title.textContent, 'Loading...');
+  assert.equal(h.panels[0].hidden, false);
+  h.composer(1, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
+  assert.equal(h.frames[1].hidden, false);
+  assert.equal(h.panels[0].hidden, true);
+  assert.equal(h.calls.some(call => call.url === '/api/open-session'), false);
+});
+
+test('slow switches use a matching host placeholder while the target stays hidden and the timeout stays armed', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = ['old', 'next'].map((id, i) => ({ id, active: i === 0, ready: true, revision: 1,
+    url: `http://127.0.0.1:23457/view/${id}/token/index.html` }));
+  await h.load();
+  h.composer(0, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
+  h.state.views[0].active = false; h.state.views[1].active = true;
+  await h.window.desktop.getState();
+  h.composer(1, false, undefined, null, true, { left: 0, top: 41, width: 952, height: 779 });
+  assert.equal(h.frames[0].hidden, false, 'brief loads retain old pixels');
+  h.timers.get(h.frames[1].loadingTimer).callback();
+  assert.equal(h.frames[1].hidden, true, 'the loading placeholder is owned by the host');
+  assert.equal(h.panels[0].children[0].children[0].textContent, 'Loading...');
+  assert.equal(h.panels[0].children[0].children[1].hidden, true);
+  assert.equal(h.panels[0].dataset.state, 'loading');
+  assert.equal(h.panels[0].style.top, '41px', 'match the plugin chat area, excluding its header');
+  assert.equal(h.panels[0].style.height, '779px');
+  assert.ok(h.timers.has(h.frames[1].revealTimer), 'the plugin spinner must not suppress failure handling');
+  h.composer(1, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
+  assert.equal(h.timers.has(h.frames[1].revealTimer), false);
+});
+
+test('late errors from abandoned targets do not cover the active conversation', async () => {
+  const h = desktopHarness({ mounted: true });
+  h.state.phase = 'active';
+  h.state.views = ['one', 'two'].map((id, i) => ({ id, active: i === 0, ready: true, revision: 1,
+    url: `http://127.0.0.1:23457/view/${id}/token/index.html` }));
+  await h.load();
+  h.composer(0, false, undefined, { left: 10, top: 700, width: 680, height: 80 });
+  h.state.views[0].active = false; h.state.views[1].active = true;
+  await h.window.desktop.getState();
+  h.state.views[0].active = true; h.state.views[1].active = false;
+  await h.window.desktop.getState();
+  h.timers.get(h.frames[1].revealTimer).callback();
+  assert.equal(h.frames[0].hidden, false);
+  assert.equal(h.panels.length, 0);
+});
+
+test('failed silent updates release the retained chat and fatal errors release the loading UI', async () => {
+  for (const phase of ['active', 'error']) {
+    const h = desktopHarness({ mounted: true });
+    h.state.phase = 'active';
+    h.state.views = [{ id: 'old', active: true, ready: true, revision: 1,
+      url: 'http://127.0.0.1:23457/view/old/token/index.html' }];
+    await h.load();
+    h.state.pluginUpdating = true;
+    await h.window.desktop.getState();
+    h.state.pluginUpdating = false;
+    h.state.phase = phase;
+    const state = await h.window.desktop.getState();
+    assert.equal(state.pluginUpdating, false);
+    assert.equal(h.frames[0].inert, phase !== 'active');
+    assert.equal(h.frames[0].hidden, phase !== 'active');
+  }
 });
 
 test('hidden idle transports suspend, queued messages wake them and running sessions stay connected', async () => {

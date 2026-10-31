@@ -3,6 +3,7 @@
 (() => {
   const { base } = __claudeBridge;
   let theme = __claudeBridge.theme;
+  let themeKind = __claudeBridge.themeKind ?? (theme === 'light' ? 'light' : 'dark');
   let state = __claudeBridge.state;
   let acquired = false;
   let listenerReady = false;
@@ -11,6 +12,26 @@
   const requests = new Set();
   const hostRequestsWithResponse = new Set(['tool_permission_request', 'user_dialog_request', 'engine_prompt_ask']);
   let posts = 0;
+  let nativePort;
+
+  let openContext;
+  Object.defineProperty(window, '__goContext', { value: Object.freeze({
+    attach(open) {
+      openContext = open;
+      window.parent.postMessage({ type: 'claude-host:context-ready' }, __claudeBridge.shellOrigin);
+      return open;
+    },
+  }) });
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.origin !== __claudeBridge.shellOrigin
+      || event.data?.type !== 'claude-host:open-context') return;
+    event.stopImmediatePropagation();
+    openContext?.();
+  });
+
+  window.__goCodeThemes = window.goCodeThemes?.create({
+    document, base, value: __claudeBridge.themeFamily,
+  });
 
   function applyTranscriptWidth(value) {
     const widths = { narrow: 680, medium: 860, wide: 1040 };
@@ -18,7 +39,19 @@
   }
   applyTranscriptWidth(__claudeBridge.transcriptWidth);
 
+  function applyInterfaceSize(value) {
+    const size = { small: 12, medium: 14, large: 16 }[value] ?? 12;
+    for (const variable of ['--vscode-chat-font-size', '--vscode-font-size', '--vscode-editor-font-size']) {
+      document.documentElement.style.setProperty(variable, `${size}px`);
+    }
+  }
+  applyInterfaceSize(__claudeBridge.interfaceSize);
+
   function send(endpoint, value) {
+    if (__claudeBridge.native) {
+      nativePort?.postMessage({ endpoint, value });
+      return;
+    }
     posts++;
     if (endpoint === 'message') trackRequest(value, true);
     ensureConnection();
@@ -49,12 +82,18 @@
   });
 
   function deliver(message) {
+    if (Object.hasOwn(message ?? {}, '_claudeHostInterfaceSize')) {
+      applyInterfaceSize(message._claudeHostInterfaceSize);
+      return;
+    }
     if (message?._claudeHostTranscriptWidth) {
       applyTranscriptWidth(message._claudeHostTranscriptWidth);
       return;
     }
     if (message?._claudeHostTheme) {
       theme = message._claudeHostTheme;
+      themeKind = message._claudeHostThemeKind ?? (theme === 'light' ? 'light' : 'dark');
+      void window.__goCodeThemes?.update(message._claudeHostThemeFamily);
       applyTheme();
       return;
     }
@@ -63,9 +102,11 @@
 
   function applyTheme() {
     if (!document.body) return;
+    const kind = themeKind;
     document.body.classList.remove('vscode-dark', 'vscode-light');
-    document.body.classList.add(`vscode-${theme}`);
-    document.body.dataset.vscodeThemeKind = `vscode-${theme}`;
+    document.body.classList.add(`vscode-${kind}`);
+    document.body.dataset.vscodeThemeKind = `vscode-${kind}`;
+    document.body.dataset.colorTheme = theme;
     const link = document.getElementById('claude-host-theme');
     if (link) link.href = base + 'theme.css?theme=' + theme;
   }
@@ -127,6 +168,7 @@
   }
 
   originalAdd.call(window, 'message', event => {
+    if (__claudeBridge.native) return;
     if (!__claudeBridge.shellOrigin || event.source !== window.parent || event.origin !== __claudeBridge.shellOrigin
       || event.data?.type !== 'claude-host:transport' || typeof event.data.keepAlive !== 'boolean') return;
     event.stopImmediatePropagation();
@@ -171,8 +213,30 @@
       retry = Math.min(retry * 2, 10000);
     };
   }
-  connect();
+  function connectNative() {
+    const channel = new MessageChannel();
+    nativePort = channel.port1;
+    nativePort.onmessage = event => {
+      if (event.data?.error) {
+        console.error('Claude native view bridge:', event.data.error);
+        return;
+      }
+      const message = event.data?.message;
+      if (listenerReady || window.onmessage) deliver(message);
+      else pending.push(message);
+    };
+    nativePort.start();
+    window.parent.postMessage({ type: 'claude-host:native-ready' }, __claudeBridge.shellOrigin, [channel.port2]);
+  }
+  if (__claudeBridge.native) connectNative();
+  else connect();
   originalAdd.call(window, 'pagehide', () => {
+    if (__claudeBridge.native) {
+      nativePort?.postMessage({ endpoint: 'close' });
+      nativePort?.close();
+      nativePort = undefined;
+      return;
+    }
     closed = true;
     clearTimeout(reconnect);
     reconnect = undefined;
@@ -183,6 +247,7 @@
   });
   originalAdd.call(window, 'pageshow', event => {
     if (!event.persisted) return;
+    if (__claudeBridge.native) { connectNative(); return; }
     closed = false;
     reportTransport(false);
     if (needed()) ensureConnection();

@@ -24,12 +24,26 @@ func prepareChatFixture(t *testing.T, a *App) {
 	}
 	source := `const vscode = require('vscode');
 exports.activate = context => {
-  for (const name of ['claude-vscode.editor.open', 'claude-vscode.newConversation']) {
-    context.subscriptions.push(vscode.commands.registerCommand(name, () => {
-      const panel = vscode.window.createWebviewPanel('claude', 'New chat fixture', 1, {enableScripts:true});
-      panel.webview.html = '<html><body>New chat fixture</body></html>';
-    }));
-  }
+  let active;
+  context.subscriptions.push(vscode.commands.registerCommand('claude-vscode.editor.open', () => {
+    const panel = vscode.window.createWebviewPanel('claude', 'New chat fixture', 1, {enableScripts:true});
+    panel.webview.html = '<html><body>New chat fixture</body></html>';
+    panel.onDidChangeViewState(() => { if (panel.active) active = panel; });
+    panel.webview.onDidReceiveMessage(message => {
+      if (message.type !== 'launch_claude') return;
+      return panel.webview.postMessage({type:'from-extension', message:{
+        type:'io_message', channelId:message.channelId,
+        message:{type:'system', subtype:'init', session_id:message.resume ?? '` + regressionSessionID + `'}
+      }});
+    });
+    active = panel;
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('claude-vscode.newConversation', () => {
+    // The official command changes the current page, retaining its old channels.
+    return active?.webview.postMessage({type:'from-extension', message:{
+      type:'request', request:{type:'create_new_conversation'}
+    }});
+  }));
 };`
 	if err := os.WriteFile(filepath.Join(a.prepared.ExtensionPath, "extension.cjs"), []byte(source), 0600); err != nil {
 		t.Fatal(err)

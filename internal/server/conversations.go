@@ -39,7 +39,8 @@ func (a *App) newConversation(ctx context.Context, directory string) error {
 	if peer == nil {
 		return errors.New("plugin host is not ready")
 	}
-	if _, err := peer.Call(ctx, "command", map[string]any{"command": "claude-vscode.newConversation"}); err != nil {
+	// The plugin's newConversation command retains old channels in the same page.
+	if _, err := peer.Call(ctx, "command", map[string]any{"command": "claude-vscode.editor.open"}); err != nil {
 		return err
 	}
 	a.mu.Lock()
@@ -66,11 +67,20 @@ func (a *App) openConversation(ctx context.Context, directory, id string) error 
 	}
 	a.mu.Lock()
 	peer, ready := a.peer, a.phase == "active"
+	var viewID string
+	for _, view := range a.views {
+		if view.SessionID == id {
+			viewID = view.ID
+			if viewID == a.active {
+				break
+			}
+		}
+	}
 	a.mu.Unlock()
 	if peer == nil || !ready {
 		return errors.New("plugin host is not ready")
 	}
-	if _, err := peer.Call(ctx, "command", map[string]any{"command": "claude-vscode.editor.open", "args": []any{id}}); err != nil {
+	if _, err := peer.Call(ctx, "conversation.open", map[string]any{"sessionId": id, "viewId": viewID}); err != nil {
 		return err
 	}
 	a.mu.Lock()

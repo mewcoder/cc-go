@@ -6,7 +6,10 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'">
     <title>CC Go</title>
     <link rel="stylesheet" href="theme.css">
+    <link rel="stylesheet" href="theme-light.css">
     <link rel="stylesheet" href="shell.css">
+    <link rel="stylesheet" href="theme-palettes.css">
+    <script src="settings-theme.js" defer></script>
     <script src="shell.js" defer></script>
   </head>
   <body data-phase="starting" data-theme="dark" data-initializing="true">
@@ -14,21 +17,17 @@
       <button id="toggle-sidebar" class="window-toggle" type="button" title="Hide Sidebar" aria-label="Hide Sidebar"></button>
     </div>
     <div class="content">
-      <aside class="sidebar" aria-label="Workspace">
+      <aside class="sidebar" aria-label="Project">
         <button id="new-chat" class="sidebar-new-chat" type="button" disabled>New Chat</button>
         <div class="sidebar-header">
-          <h2>Workspace</h2>
-          <button id="add-workspace" class="icon-button" type="button" title="Add Workspace" aria-label="Add Workspace" disabled>+</button>
+          <button id="archive-back" class="icon-button" type="button" title="Back to Projects" aria-label="Back to Projects" hidden></button>
+          <h2>Project</h2>
+          <span id="archive-count" class="archive-count" hidden>0</span>
+          <button id="add-workspace" class="icon-button" type="button" title="Add Project" aria-label="Add Project" disabled>+</button>
         </div>
-        <nav id="workspace-list" class="workspace-list" aria-label="Workspace list"></nav>
-        <section class="archive-section" aria-label="Archived chats">
-          <button id="toggle-archive" class="archive-toggle" type="button" aria-expanded="false" aria-controls="archive-list">
-            <span id="archive-icon" aria-hidden="true"></span>
-            <span>Archive</span>
-            <span id="archive-count" class="archive-count">0</span>
-          </button>
-          <div id="archive-list" class="archive-list" hidden></div>
-        </section>
+        <nav id="workspace-list" class="workspace-list" aria-label="Project list"></nav>
+        <input id="archive-search" class="archive-search" type="search" placeholder="Search archived chats" aria-label="Search archived chats" aria-controls="archive-list" autocomplete="off" spellcheck="false" hidden>
+        <nav id="archive-list" class="archive-list" aria-label="Archived chats" hidden></nav>
         <div class="sidebar-footer">
           <span id="connection-status" class="connection-status" role="status" tabindex="0">
             <span class="connection-dot" aria-hidden="true"></span>

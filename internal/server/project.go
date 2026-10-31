@@ -116,6 +116,10 @@ func (c *projectCache) getContext(ctx context.Context, directory string, force b
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if generation != c.generation || ctx.Err() != nil {
+		// Discard an interrupted read without blanking a known branch in this workspace.
+		if c.info.Path == directory {
+			return c.info
+		}
 		return ProjectInfo{Path: directory, Name: filepath.Base(directory), GitStatus: "unknown"}
 	}
 	c.info = info
@@ -190,7 +194,7 @@ func readProjectContext(ctx context.Context, directory string) ProjectInfo {
 	return info
 }
 
-type gitFileStatus struct{ code, path string }
+type gitFileStatus struct{ code, path, original string }
 
 func gitStatusEntries(status string) []gitFileStatus {
 	var files []gitFileStatus
@@ -200,11 +204,15 @@ func gitStatusEntries(status string) []gitFileStatus {
 		if len(entry) < 4 {
 			continue
 		}
-		files = append(files, gitFileStatus{code: entry[:2], path: entry[3:]})
+		file := gitFileStatus{code: entry[:2], path: entry[3:]}
 		// Porcelain -z renames/copies include a second, unprefixed pathname.
 		if strings.ContainsAny(entry[:2], "RC") {
 			i++
+			if i < len(entries) {
+				file.original = entries[i]
+			}
 		}
+		files = append(files, file)
 	}
 	return files
 }

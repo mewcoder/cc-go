@@ -16,6 +16,8 @@ import (
 )
 
 func Run(backend *server.App) error {
+	backend.EnableNativeViews()
+	mygo.Bind(&ViewBridge{backend: backend})
 	app := mygo.App
 	app.SetName("CC Go")
 	app.OnQuit(backend.Close)
@@ -42,8 +44,8 @@ func Run(backend *server.App) error {
 		window.Page().OnDidFailLoad(func(err *mygo.LoadError) {
 			log.Printf("Desktop page failed to load: %v", err)
 		})
-		// Keep extension HTML on its existing separate loopback origin. No Go
-		// services are bound to MyGo's bridge; only the shell trusts this URL.
+		// Only the shell gets the narrow native relay; extension HTML stays
+		// isolated on its separate loopback origin without a MyGo preload.
 		window.Page().OnWillNavigate(func(event *mygo.NavigateEvent) {
 			if !sameOrigin(event.URL, backend.ShellURL) {
 				event.PreventDefault()
@@ -98,12 +100,13 @@ func nativeServices(window *mygo.Window) server.Native {
 		return paths[0], nil
 	}
 	return server.Native{
-		SetTheme:      func(theme string) { window.SetWindowButtonsTheme(mygo.ThemeSource(theme)) },
-		CloseWindow:   window.Close,
-		OpenURL:       mygo.Shell.OpenExternal,
-		OpenPath:      mygo.Shell.OpenPath,
-		ReadClipboard: func() (string, error) { return mygo.Clipboard.ReadText(), nil },
-		Copy:          func(text string) error { return mygo.Clipboard.Write(transfer.TextData(text)) },
+		SetTheme:         func(theme string) { window.SetWindowButtonsTheme(mygo.ThemeSource(theme)) },
+		CloseWindow:      window.Close,
+		OpenURL:          mygo.Shell.OpenExternal,
+		OpenPath:         mygo.Shell.OpenPath,
+		ShowItemInFolder: mygo.Shell.ShowItemInFolder,
+		ReadClipboard:    func() (string, error) { return mygo.Clipboard.ReadText(), nil },
+		Copy:             func(text string) error { return mygo.Clipboard.Write(transfer.TextData(text)) },
 		SelectFolder: func() (string, error) {
 			return selectFile(mygo.OpenDialogOptions{Title: "Choose a workspace", Directory: true})
 		},

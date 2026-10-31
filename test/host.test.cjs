@@ -73,19 +73,20 @@ test('configuration uses declared defaults and persists updates with change even
 
 test('desktop defaults preserve explicit overrides and unrelated manifest defaults', async t => {
   const defaults = {
+    archiveInactiveSessions: 0,
     allowDangerouslySkipPermissions: true,
     hideOnboarding: true,
     disableLoginPrompt: true,
   };
   const properties = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [
-    `claudeCode.${key}`, { type: typeof value, default: typeof value === 'boolean' ? false : 'default' },
+    `claudeCode.${key}`, { type: typeof value, default: typeof value === 'boolean' ? false : 14 },
   ]));
   properties['claudeCode.initialPermissionMode'] = { type: 'string' };
   properties['claudeCode.focusView'] = { type: 'boolean', default: false };
   const { vscode, getSettings, updateSetting } = await host(t, properties);
   const config = vscode.workspace.getConfiguration('claudeCode');
   for (const [key, value] of Object.entries(defaults)) {
-    const override = typeof value === 'boolean' ? false : 'default';
+    const override = typeof value === 'boolean' ? false : 14;
     assert.equal(config.get(key), value);
     assert.equal(config.inspect(key).defaultValue, value);
     assert.equal(getSettings().properties[`claudeCode.${key}`].default, value);
@@ -130,6 +131,25 @@ test('webviews forward native messages and maintain tab lifecycle', async t => {
   assert.equal(await panel.webview.postMessage({ type: 'reply' }), true);
   panel.dispose();
   assert.equal(vscode.window.tabGroups.activeTabGroup.tabs.length, 0);
+});
+
+test('activating a retained session selects its page and uses the plugin session switch', async t => {
+  const h = await host(t);
+  const original = h.vscode.window.createWebviewPanel('native', 'Original', 1, {});
+  const other = h.vscode.window.createWebviewPanel('native', 'Other', 1, {});
+  const messages = [];
+  h.peer.call = async (method, args) => { messages.push({ method, args }); return true; };
+  assert.equal(await h.activateSession(original.id, 'retained-session'), true);
+  assert.equal(original.active, true);
+  assert.equal(other.active, false);
+  assert.equal(h.vscode.window.tabGroups.activeTabGroup.tabs.length, 2);
+  assert.deepEqual(messages, [{ method: 'webview.post', args: { id: original.id, message: {
+    type: 'from-extension', message: { type: 'request', channelId: '', requestId: '',
+      request: { type: 'activate_session', sessionId: 'retained-session' } },
+  } } }]);
+  original.dispose();
+  assert.equal(await h.activateSession(original.id, 'retained-session'), false);
+  assert.equal(messages.length, 1);
 });
 
 test('unsupported commands and editor services fail instead of claiming success', async t => {

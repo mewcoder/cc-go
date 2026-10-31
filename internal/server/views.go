@@ -43,13 +43,24 @@ type View struct {
 	done                   chan struct{}
 	closeOnce              sync.Once
 	state                  json.RawMessage
+	nativeStreamMu         sync.Mutex
+	nativeCancel           context.CancelFunc
 }
 
 func newView(id, title, token string) *View {
 	return &View{ID: id, Title: title, Token: token, wake: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
-func (v *View) close() { v.closeOnce.Do(func() { close(v.done) }) }
+func (v *View) close() {
+	v.closeOnce.Do(func() {
+		close(v.done)
+		v.mu.Lock()
+		if v.nativeCancel != nil {
+			v.nativeCancel()
+		}
+		v.mu.Unlock()
+	})
+}
 
 func (v *View) post(message json.RawMessage) error {
 	v.mu.Lock()
@@ -92,11 +103,15 @@ func (a *App) ViewHandler() http.Handler {
 		a.mu.Lock()
 		view := a.views[parts[1]]
 		var roots []string
-		var html, theme, transcriptWidth string
+		var html, theme, transcriptWidth, interfaceSize string
+		var codeTheme codeThemeInfo
+		nativeViews := a.nativeViews
 		if view != nil {
 			roots = append([]string(nil), view.Roots...)
 			html, theme = view.HTML, a.state.Theme
 			transcriptWidth = a.state.TranscriptWidth
+			interfaceSize = a.state.InterfaceSize
+			codeTheme = themeFamily(theme)
 		}
 		a.mu.Unlock()
 		if view == nil || !equalToken(parts[2], view.Token) {
@@ -113,10 +128,30 @@ func (a *App) ViewHandler() http.Handler {
 				http.Error(w, "Resource denied", 403)
 				return
 			}
+			if filepath.Base(filename) == "index.js" && filepath.Base(filepath.Dir(filename)) == "webview" {
+				if b, err := os.ReadFile(filename); err == nil {
+					patched, ok := patchCodeThemeAdapter(string(b))
+					if !ok {
+						patched = `console.warn("CC Go: this VSIX version does not support custom code themes");` + string(b)
+					}
+					patched, _ = patchContextAdapter(patched)
+					w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+					http.ServeContent(w, r, "index.js", time.Time{}, strings.NewReader(patched))
+					return
+				}
+			}
 			http.ServeFile(w, r, filename)
 			return
 		}
 		base := a.ViewURL + "/view/" + view.ID + "/" + view.Token + "/"
+		if strings.HasPrefix(parts[3], "code-themes/") {
+			serveCodeTheme(w, r, strings.TrimPrefix(parts[3], "code-themes/"))
+			return
+		}
+		if nativeViews && (parts[3] == "events" || parts[3] == "socket" || parts[3] == "message" || parts[3] == "state" || parts[3] == "external") {
+			http.Error(w, "This view uses the native host bridge", http.StatusGone)
+			return
+		}
 		switch parts[3] {
 		case "index.html":
 			if r.Method != "GET" {
@@ -125,14 +160,14 @@ func (a *App) ViewHandler() http.Handler {
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = io.WriteString(w, injectBridge(html, base))
-		case "bridge.js", "composer.js":
+		case "bridge.js", "composer.js", "code-themes.js":
 			if r.Method != "GET" {
 				http.Error(w, "Method not allowed", 405)
 				return
 			}
-			if parts[3] == "composer.js" {
+			if parts[3] != "bridge.js" {
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-				b, _ := a.readWebFile("composer.js")
+				b, _ := a.readWebFile(parts[3])
 				_, _ = w.Write(b)
 				return
 			}
@@ -144,17 +179,18 @@ func (a *App) ViewHandler() http.Handler {
 			}
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 			b, _ := a.readWebFile("bridge.js")
-			prefix, _ := json.Marshal(map[string]any{"base": base, "state": state, "theme": theme, "transcriptWidth": transcriptWidth, "shellOrigin": a.ShellURL})
+			prefix, _ := json.Marshal(map[string]any{"base": base, "state": state, "theme": theme, "themeKind": themeKind(theme), "themeFamily": codeTheme, "transcriptWidth": transcriptWidth, "interfaceSize": interfaceSize, "shellOrigin": a.ShellURL, "native": nativeViews})
 			_, _ = fmt.Fprintf(w, "const __claudeBridge = %s;\n", prefix)
 			_, _ = w.Write(b)
 		case "theme.css":
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
 			name := "theme.css"
-			if theme == "light" {
+			if themeKind(theme) == "light" {
 				name = "theme-light.css"
 			}
 			b, _ := runtimefiles.Files.ReadFile(name)
 			_, _ = w.Write(b)
+			_, _ = io.WriteString(w, "\n"+themePalettesCSS)
 			composer, _ := a.readWebFile("composer.css")
 			_, _ = w.Write(append([]byte("\n"), composer...))
 			scrollbars, _ := a.readWebFile("scrollbars.css")
@@ -250,7 +286,7 @@ func injectBridge(html, base string) string {
 			nonce = ` nonce="` + match[1] + `"`
 		}
 	}
-	bridge := `<script` + nonce + ` src="` + base + `bridge.js"></script><script` + nonce + ` src="` + base + `composer.js"></script><link id="claude-host-theme" rel="stylesheet" href="` + base + `theme.css">`
+	bridge := `<script` + nonce + ` src="` + base + `code-themes.js"></script><script` + nonce + ` src="` + base + `bridge.js"></script><script` + nonce + ` src="` + base + `composer.js"></script><link id="claude-host-theme" rel="stylesheet" href="` + base + `theme.css">`
 	if loc := scriptPattern.FindStringIndex(html); loc != nil {
 		return html[:loc[0]] + bridge + html[loc[0]:]
 	}

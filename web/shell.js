@@ -32,7 +32,8 @@
     workspaceList: element('workspace-list'),
     addWorkspace: element('add-workspace'),
     newChat: element('new-chat'),
-    toggleArchive: element('toggle-archive'),
+    archiveBack: element('archive-back'),
+    archiveSearch: element('archive-search'),
     archiveList: element('archive-list'),
     archiveCount: element('archive-count'),
     toggleSidebar: element('toggle-sidebar'),
@@ -100,7 +101,7 @@
     document.body.classList.toggle('sidebar-collapsed', sidebarCollapsed);
     ui.resizer.hidden = sidebarCollapsed;
     ui.resizer.setAttribute('aria-valuenow', String(sidebarWidth));
-    ui.toggleSidebar.replaceChildren(icon(sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'));
+    ui.toggleSidebar.replaceChildren(icon('panel-left'));
     ui.toggleSidebar.title = sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar';
     ui.toggleSidebar.setAttribute('aria-label', ui.toggleSidebar.title);
     if (!integratedTitlebar) {
@@ -129,8 +130,9 @@
   const iconPaths = {
     plus: ['M12 5v14', 'M5 12h14'],
     folder: ['M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'],
+    'folder-plus': ['M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z', 'M12 10v6', 'M9 13h6'],
     'folder-open': ['m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2'],
-    'folder-archive': ['M17 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z', 'M20.9 19.8A2 2 0 0 0 22 18V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h5.1', 'M15 11v-1', 'M15 17v-2'],
+    'arrow-left': ['M19 12H5', 'm12 19-7-7 7-7'],
     'message-square-plus': ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M12 7v6', 'M9 10h6'],
     pencil: ['m16 3 5 5', 'm3 21 4-1 14-14a2 2 0 0 0-5-5L2 15l-1 5Z'],
     archive: ['M3 3h18v5H3z', 'M5 8v13h14V8', 'M10 12h4'],
@@ -141,15 +143,17 @@
     x: ['M18 6 6 18', 'm6 6 12 12'],
     refresh: ['M3 11a9 9 0 0 1 15.4-6.4L21 7', 'M21 3v4h-4', 'M21 13a9 9 0 0 1-15.4 6.4L3 17', 'M7 17H3v4'],
     upgrade: ['M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', 'M12 16V8', 'm8 12 4-4 4 4'],
-    'panel-left-close': ['M3 3h18v18H3z', 'M9 3v18', 'm16 15-3-3 3-3'],
-    'panel-left-open': ['M3 3h18v18H3z', 'M9 3v18', 'm14 9 3 3-3 3'],
+    'panel-left': ['M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z', 'M9 3v18'],
   };
+
+  // Original path from the plugin's resources/claude-logo.svg.
+  iconPaths.claude = ['M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z'];
 
   function icon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('fill', name === 'claude' ? 'currentColor' : 'none');
+    svg.setAttribute('stroke', name === 'claude' ? 'none' : 'currentColor');
     svg.setAttribute('stroke-width', '1.8');
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
@@ -163,16 +167,16 @@
     return svg;
   }
 
-  ui.addWorkspace.replaceChildren(icon('plus'));
+  ui.addWorkspace.replaceChildren(icon('folder-plus'));
   ui.newChat.replaceChildren(icon('plus'), document.createTextNode('New Chat'));
-  element('archive-icon').append(icon('folder-archive'));
+  ui.archiveBack.append(icon('arrow-left'));
   ui.closeLogs.append(icon('x'));
   ui.openSettings.append(icon('settings'));
   ui.theme.append(icon('sun'));
   ui.theme.dataset.theme = 'dark';
   ui.closeSettings.append(icon('x'));
   ui.pluginUpdate.append(icon('upgrade'));
-  ui.toggleSidebar.append(icon('panel-left-close'));
+  ui.toggleSidebar.append(icon('panel-left'));
   applySidebar();
 
   function relativeTime(timestamp) {
@@ -248,6 +252,10 @@
     let control;
     if (key === 'desktop.transcriptWidth') {
       control = window.goWidthControl.create(document, { value: current, status, save: value => desktop.setTranscriptWidth(value) });
+    } else if (key === 'desktop.interfaceSize') {
+      control = window.goInterfaceSizeControl.create(document, { value: current, status, save: value => desktop.setInterfaceSize(value) });
+    } else if (key === 'desktop.theme') {
+      control = window.goThemeControl.create(document, { value: current, status, save: value => desktop.setTheme(value) });
     } else if (property.type === 'boolean') {
       control = document.createElement('input');
       control.type = 'checkbox';
@@ -308,6 +316,18 @@
   function renderSettings() {
     if (!settingsData) return;
     const properties = {
+      'desktop.theme': {
+        title: 'Theme',
+        description: 'Colors across the sidebar and plugin pages.',
+        type: 'string', default: 'dark',
+        enum: [],
+      },
+      'desktop.interfaceSize': {
+        title: 'Interface Size',
+        description: 'Text size across the sidebar, settings, and plugin pages.',
+        type: 'string', default: 'small',
+        enum: ['small', 'medium', 'large'], enumItemLabels: ['Small', 'Medium', 'Large'],
+      },
       'desktop.transcriptWidth': {
         title: 'Transcript Width',
         description: 'Maximum width of the transcript and composer columns.',
@@ -317,8 +337,8 @@
       ...Object.fromEntries(Object.entries(settingsData.properties ?? {})
         .filter(([key]) => !unsupportedSettings.has(key))),
     };
-    const values = { ...settingsData.values, 'desktop.transcriptWidth': state.transcriptWidth ?? 'narrow' };
-    const keys = ['desktop.transcriptWidth', ...settingOrder.map(key => `claudeCode.${key}`)];
+    const values = { ...settingsData.values, 'desktop.transcriptWidth': state.transcriptWidth ?? 'narrow', 'desktop.interfaceSize': state.interfaceSize ?? 'small', 'desktop.theme': state.theme ?? 'dark' };
+    const keys = ['desktop.theme', 'desktop.interfaceSize', 'desktop.transcriptWidth', ...settingOrder.map(key => `claudeCode.${key}`)];
     const knownKeys = new Set(keys);
     const extraKeys = Object.keys(properties).filter(key => !knownKeys.has(key));
     keys.push(...extraKeys);
@@ -361,6 +381,9 @@
     }
   }
   let state = { phase: 'starting', label: '', logs: [], tabs: [] };
+  const sidebarList = window.goSidebarList.create(document, desktop, {
+    list: ui.workspaceList, createRow: createSessionRow, updateRow: updateSessionRow, render, formatPath,
+  });
   let logsOpen = false;
   let actionError = '';
   let unsubscribe;
@@ -391,6 +414,7 @@
     row.className = 'workspace-row';
     const expanded = !collapsedWorkspaces.has(path);
     const folderIcon = document.createElement('span');
+    folderIcon.className = 'workspace-folder-icon';
     folderIcon.append(icon(expanded ? 'folder-open' : 'folder'));
     const open = document.createElement('button');
     open.type = 'button';
@@ -404,7 +428,7 @@
     newSession.className = 'workspace-new';
     newSession.title = 'New Chat';
     newSession.setAttribute('aria-label', 'New Chat');
-    newSession.append(icon('message-square-plus'));
+    newSession.append(icon('plus'));
     newSession.addEventListener('click', () => {
       void runCommand(`new-session:${path}`, () => desktop.newSession(path));
     });
@@ -423,6 +447,10 @@
       entry.folderIcon.replaceChildren(icon(entry.expanded ? 'folder-open' : 'folder'));
       entry.open.setAttribute('aria-expanded', String(entry.expanded));
       entry.open.setAttribute('aria-label', `${entry.expanded ? 'Collapse' : 'Expand'} ${entry.label.textContent}`);
+      if (!entry.expanded) {
+        entry.sessionLimit = 5;
+        render();
+      }
     });
     const entry = { container, row, open, label, folderIcon, newSession, sessionList, expanded, sessions: new Map() };
     workspaceElements.set(path, entry);
@@ -433,6 +461,7 @@
     const row = document.createElement('div');
     row.className = 'session-row';
     row.dataset.sessionId = id;
+    row.dataset.workspacePath = workspacePath;
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'session-item';
@@ -441,6 +470,7 @@
     const status = document.createElement('span');
     status.className = 'session-status';
     status.setAttribute('aria-hidden', 'true');
+    status.append(icon('claude'));
     const time = document.createElement('span');
     time.className = 'session-time';
     open.append(status, title, time);
@@ -512,8 +542,8 @@
     open.title = archived ? `${name}\n${formatPath(workspacePath)}` : `${name}\n${label}`;
     open.setAttribute('aria-label', archived ? name : `${name}, ${label}`);
     row.classList.toggle('active', Boolean(session.active));
-    time.textContent = archived ? '' : relativeTime(session.updatedAt);
-    time.title = session.updatedAt ? `Last activity: ${new Date(Number(session.updatedAt)).toLocaleString('en-US')}` : '';
+    time.textContent = archived ? String(session.workspaceName || workspacePath.split(/[\\/]/).filter(Boolean).pop() || workspacePath) : relativeTime(session.updatedAt);
+    time.title = archived ? formatPath(workspacePath) : session.updatedAt ? `Last activity: ${new Date(Number(session.updatedAt)).toLocaleString('en-US')}` : '';
     const busy = !desktop || phase === 'starting' || phase === 'activating'
       || pending.has(`open-session:${session.id}`) || pending.has(`rename-session:${session.id}`)
       || pending.has(`archive-session:${session.id}`) || pending.has(`switch:${workspacePath}`);
@@ -572,8 +602,21 @@
     entry.sessionList.hidden = collapsedWorkspaces.has(workspacePath);
   }
 
+  function setArchiveView(open) {
+    archiveExpanded = open;
+    if (!open) ui.archiveSearch.value = '';
+    renderArchive(state.phase);
+    if (open) ui.archiveBack.focus();
+    else element('project-more')?.focus();
+  }
+
   function renderArchive(phase) {
-    const sessions = Array.isArray(state.archivedSessions) ? state.archivedSessions : [];
+    const allSessions = Array.isArray(state.archivedSessions) ? state.archivedSessions : [];
+    const terms = ui.archiveSearch.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const sessions = allSessions.filter(session => {
+      const text = `${session.title || 'Chat'} ${session.workspaceName || ''} ${session.workspace || ''}`.toLowerCase();
+      return terms.every(term => text.includes(term));
+    });
     const keys = new Set(sessions.map(session => JSON.stringify([session.workspace, session.id])));
     for (const [key, row] of archiveElements) {
       if (!keys.has(key)) {
@@ -600,13 +643,20 @@
       empty.textContent = 'No archived chats';
       ui.archiveList.append(empty);
     } else if (sessions.length) empty?.remove();
-    ui.archiveCount.textContent = String(sessions.length);
-    ui.toggleArchive.setAttribute('aria-expanded', String(archiveExpanded));
+    if (empty && !sessions.length) empty.textContent = terms.length ? 'No matching archived chats' : 'No archived chats';
+    ui.archiveCount.textContent = terms.length ? `${sessions.length} / ${allSessions.length}` : String(allSessions.length);
+    ui.sidebarHeader.querySelector('h2').textContent = archiveExpanded ? 'Archived Chats' : 'Project';
+    ui.archiveBack.hidden = ui.archiveCount.hidden = !archiveExpanded;
+    ui.addWorkspace.hidden = archiveExpanded;
+    const projectMore = element('project-more');
+    if (projectMore) projectMore.hidden = archiveExpanded;
+    ui.workspaceList.hidden = archiveExpanded;
     ui.archiveList.hidden = !archiveExpanded;
+    ui.archiveSearch.hidden = !archiveExpanded;
   }
 
   function renderWorkspaces(phase) {
-    const items = Array.isArray(state.workspaces) ? state.workspaces : [];
+    const items = sidebarList.prepare(state);
     const paths = new Set(items.map((item) => item.path));
     for (const [path, entry] of workspaceElements) {
       if (!paths.has(path)) {
@@ -617,6 +667,7 @@
     const disabled = !desktop || phase === 'setup' || phase === 'starting' || phase === 'activating';
     items.forEach((item, index) => {
       const entry = workspaceElements.get(item.path) ?? createWorkspaceNode(item.path);
+      entry.container.hidden = sidebarList.merged;
       const collapsed = collapsedWorkspaces.has(item.path);
       const name = formatPath(item.name || item.path);
       entry.row.classList.toggle('active', Boolean(item.active));
@@ -637,9 +688,10 @@
         ui.workspaceList.insertBefore(entry.container, ui.workspaceList.children[index] || null);
       }
     });
+    sidebarList.renderMerged(phase);
     ui.addWorkspace.disabled = !desktop || pending.has('add-workspace') || phase === 'setup' || phase === 'starting' || phase === 'activating';
     ui.newChat.disabled = !desktop || phase !== 'active' || pending.has('new-chat') || Boolean(state.settingsOpen || state.pluginSetupOpen || state.viewLoading);
-    ui.newChat.title = items.some(item => item.path === state.workspace) ? `New Chat in ${formatPath(state.workspace)}` : 'Start a new chat in an available workspace';
+    ui.newChat.title = items.some(item => item.path === state.workspace) ? `New Chat in ${formatPath(state.workspace)}` : 'Start a new chat in an available project';
   }
 
   function renderPluginSetup(phase) {
@@ -694,7 +746,7 @@
   }
 
   function render() {
-    const phase = Object.hasOwn(phaseNames, state.phase) ? state.phase : 'starting';
+    const phase = state.pluginUpdating ? 'active' : Object.hasOwn(phaseNames, state.phase) ? state.phase : 'starting';
     if (phase === 'active') hasEnteredApp = true;
     document.body.dataset.initializing = String(!hasEnteredApp);
     const label = String(state.label || phaseNames[phase]);
@@ -703,10 +755,14 @@
     const extensionId = String(state.extension?.id || 'Claude VS Code extension (.vsix)');
 
     const settingsOpen = Boolean(state.settingsOpen);
-    const theme = state.theme === 'light' ? 'light' : 'dark';
+    const theme = state.themeKind ?? (state.theme === 'light' ? 'light' : 'dark');
     const setupVisible = renderPluginSetup(phase);
     document.body.dataset.phase = phase;
     document.body.dataset.theme = theme;
+    document.body.classList.toggle('vscode-light', theme === 'light');
+    document.body.dataset.colorTheme = state.theme ?? 'dark';
+    document.body.dataset.themeFamily = state.themeFamily ?? 'default';
+    element('setting-desktop.theme')?.syncTheme(state.theme);
     if (ui.theme.dataset.theme !== theme) {
       ui.theme.dataset.theme = theme;
       ui.theme.replaceChildren(icon(theme === 'light' ? 'moon' : 'sun'));
@@ -728,14 +784,11 @@
       ui.settingsPanel.close();
       ui.settingsPanel.hidden = true;
     }
-    const viewLoading = Boolean(state.viewLoading);
-    const loadingView = phase === 'active' && viewLoading;
-    ui.message.hidden = (phase === 'active' && !viewLoading) || settingsOpen || setupVisible;
-    ui.messageTitle.textContent = phase === 'error' ? 'Could not start Claude Code' : loadingView ? 'Opening chat' : label;
+    ui.message.hidden = Boolean(state.pluginUpdating) || phase === 'active' || settingsOpen || setupVisible;
+    ui.messageTitle.textContent = phase === 'error' ? 'Could not start Claude Code' : label;
     ui.messageDetail.textContent = phase === 'error'
       ? error || 'Open VSIX Output for error details.'
-      : loadingView ? 'Loading Claude Code…'
-        : phase === 'activating' ? 'Starting Claude Code.' : 'Setting up Claude Code.';
+      : phase === 'activating' ? 'Starting Claude Code.' : 'Setting up Claude Code.';
     const connection = phase === 'error' ? 'Connection failed' : phase === 'active' ? 'Connected' : 'Connecting';
     ui.connectionLabel.textContent = actionError ? 'Action failed'
       : phase === 'active' && version ? String(version) : connection;
@@ -801,15 +854,16 @@
   ui.setupBack.addEventListener('click', () => { void runCommand('plugin-panel', () => desktop.showPluginSetup(false)); });
   element('setup-open-download').addEventListener('click', () => { void runCommand('plugin-download', () => desktop.openPluginDownload()); });
   ui.pluginUpdate.addEventListener('click', () => {
-    void runCommand('plugin', () => state.pluginSetup?.status === 'ready'
-      ? desktop.reloadPlugin() : desktop.showPluginSetup(true));
+    void runCommand('plugin', () => desktop.reloadPlugin());
   });
-  ui.toggleArchive.addEventListener('click', () => {
-    archiveExpanded = !archiveExpanded;
+  window.__goShowArchive = () => setArchiveView(true);
+  ui.archiveBack.addEventListener('click', () => setArchiveView(false));
+  ui.archiveSearch.addEventListener('input', () => {
+    ui.archiveList.scrollTop = 0;
     renderArchive(state.phase);
   });
   ui.theme.addEventListener('click', () => {
-    void runCommand('theme', () => desktop.setTheme(state.theme === 'light' ? 'dark' : 'light'));
+    void runCommand('theme', () => desktop.setTheme(state.themeKind === 'light' ? 'dark' : 'light'));
   });
   ui.toggleSidebar.addEventListener('click', () => {
     sidebarCollapsed = !sidebarCollapsed;

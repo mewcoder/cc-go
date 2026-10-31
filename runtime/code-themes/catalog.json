@@ -1,0 +1,56 @@
+[
+  {
+    "id": "github",
+    "label": "GitHub",
+    "light": "github-light",
+    "dark": "github-dark"
+  },
+  {
+    "id": "pierre",
+    "label": "Pierre",
+    "light": "pierre-light",
+    "dark": "pierre-dark"
+  },
+  {
+    "id": "vscode",
+    "label": "VS Code",
+    "light": "vscode-light",
+    "dark": "vscode-dark"
+  },
+  {
+    "id": "one",
+    "label": "One",
+    "light": "one-light",
+    "dark": "one-dark"
+  },
+  {
+    "id": "vitesse",
+    "label": "Vitesse",
+    "light": "vitesse-light",
+    "dark": "vitesse-dark"
+  },
+  {
+    "id": "catppuccin",
+    "label": "Catppuccin",
+    "light": "catppuccin-latte",
+    "dark": "catppuccin-mocha"
+  },
+  {
+    "id": "solarized",
+    "label": "Solarized",
+    "light": "solarized-light",
+    "dark": "solarized-dark"
+  },
+  {
+    "id": "min",
+    "label": "Min",
+    "light": "min-light",
+    "dark": "min-dark"
+  },
+  {
+    "id": "rose-pine",
+    "label": "Ros\u00e9 Pine",
+    "light": "rose-pine-dawn",
+    "dark": "rose-pine"
+  }
+]

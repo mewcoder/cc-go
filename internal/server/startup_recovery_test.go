@@ -152,9 +152,13 @@ func TestActivationFailureCanPrepareAndStartAgainOffline(t *testing.T) {
 	}
 }
 
-func activationRecoveryArchive(t *testing.T, marker string) string {
+func activationRecoveryArchive(t *testing.T, marker string, versions ...string) string {
 	t.Helper()
-	reader, err := zip.OpenReader(fixtureArchive(t))
+	version := "1.2.3"
+	if len(versions) > 0 {
+		version = versions[0]
+	}
+	reader, err := zip.OpenReader(fixtureArchiveVersion(t, version))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +367,7 @@ func TestCancelledUpdateRetriesDownloadWithoutReplacingTheActiveHost(t *testing.
 		a.mu.Lock()
 		preserved = a.peer == peer && a.active == active && a.state.Archive == archive
 		a.mu.Unlock()
-		if !preserved || snapshot["phase"] != "active" || snapshot["pluginSetupOpen"] != true || setup["status"] != "cancelled" || setup["runtimeReady"] != true || setup["updateAvailable"] != true {
+		if !preserved || snapshot["phase"] != "active" || snapshot["pluginSetupOpen"] != false || snapshot["pluginUpdating"] != false || setup["status"] != "cancelled" || setup["runtimeReady"] != true || setup["updateAvailable"] != true {
 			t.Fatal("cancel lost the usable old host or the pending update")
 		}
 	}
@@ -372,7 +376,7 @@ func TestCancelledUpdateRetriesDownloadWithoutReplacingTheActiveHost(t *testing.
 		t.Fatalf("final update retry: %d %s", w.Code, w.Body.String())
 	}
 	setup := a.snapshot()["pluginSetup"].(map[string]any)
-	if setup["readyVersion"] != "1.2.4" || setup["status"] != "ready" {
-		t.Fatal("successful retry did not prepare the newer version")
+	if setup["readyVersion"] != "1.2.4" || setup["status"] != "idle" || a.snapshot()["phase"] != "active" || a.snapshot()["pluginSetupOpen"] != false {
+		t.Fatal("successful retry did not apply and activate the newer version")
 	}
 }

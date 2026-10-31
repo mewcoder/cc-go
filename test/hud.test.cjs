@@ -28,15 +28,46 @@ function documentFixture() {
   return { body: element('body'), createElement: element, createElementNS: (_, tag) => element(tag) };
 }
 
-test('HUD combines context and cache while preserving the selected metrics', () => {
+test('HUD shows context with cache ratio only in the tooltip', () => {
   const data = hud.describe(state());
-  assert.deepEqual(Object.keys(data), ['project', 'branch', 'changes', 'context', 'tokens', 'percent']);
+  assert.deepEqual(Object.keys(data), ['project', 'branch', 'changes', 'context', 'percent']);
   assert.equal(data.project.text, 'project');
   assert.equal(data.project.title, '/code/project');
   assert.equal(data.branch.text, 'main');
-  assert.equal(data.context.text, '42% (84k/200k) \u00b7 Cache 75%');
-  assert.equal(data.tokens.text, '\u219110k \u21934k');
+  assert.equal(data.context.text, '84k / 200k (42%)');
+  assert.match(data.context.title, /Cache 75%/);
   assert.match(data.context.title, /total input: 80,000/);
+  assert.equal(data.context.tooltip, 'Context 84k / 200k (42%)\nCache 75%');
+});
+
+test('context ring reveals usage on hover and opens details with drafts and existing sessions', () => {
+  const document = documentFixture();
+  document.defaultView = { innerWidth: 1200, innerHeight: 800 };
+  let opens = 0;
+  const widget = hud.create(document, { context: () => opens++ });
+  const [bar, tooltip] = document.body.children, field = bar.children[3];
+  field.getBoundingClientRect = () => ({ right: 1000, top: 760 });
+  widget.render(state({ contextAvailable: true, canSelectProject: false }));
+  widget.layout({ left: 300, top: 760, width: 680 });
+  widget.setDraft(true);
+  assert.equal(field.children[1].hidden, true);
+  assert.equal(field.children[0].children[1].attributes['stroke-dasharray'], '42 100');
+  field.handlers.mouseenter();
+  assert.equal(tooltip.hidden, false);
+  assert.equal(tooltip.textContent, 'Context 84k / 200k (42%)\nCache 75%');
+  widget.layout({ left: 300, top: 760, width: 680 });
+  assert.equal(tooltip.hidden, false, 'State polling must not dismiss the hovered tooltip');
+  field.handlers.click();
+  assert.equal(opens, 1);
+  assert.equal(tooltip.hidden, true);
+  field.handlers.keydown({ key: 'Enter', preventDefault() {} });
+  assert.equal(opens, 2);
+  widget.render(state({ contextAvailable: false }));
+  field.handlers.click();
+  assert.equal(opens, 2, 'Unsupported plugin adapters must not open a stale dialog');
+  widget.render(state({ contextAvailable: true, activeSessionId: 'new', sessionMetrics: {} }));
+  field.handlers.click();
+  assert.equal(opens, 2, 'Empty chats must not use previous context');
 });
 
 test('HUD formats project path displays without mutating workspace identity', () => {
@@ -52,7 +83,7 @@ test('HUD formats project path displays without mutating workspace identity', ()
 test('window provenance stays in the tooltip without restoring the Context text label', () => {
   for (const [source, description] of [['native', /native context query/], ['sdk', /SDK model usage/]]) {
     const data = hud.describe(state({ sessionMetrics: { ...state().sessionMetrics, contextWindowSource: source } }));
-    assert.equal(data.context.text, '42% (84k/200k) \u00b7 Cache 75%');
+    assert.equal(data.context.text, '84k / 200k (42%)');
     assert.match(data.context.title, description);
   }
 });
@@ -81,17 +112,18 @@ test('project and branch selectors require a blank new conversation and known em
   assert.equal(bar.children[1].attributes['aria-disabled'], 'true');
 });
 
-test('project and branch interactions use neutral feedback, not accent colors', () => {
+test('project and branch hover changes only foreground for each theme', () => {
   const css = fs.readFileSync(require.resolve('../web/host.css'), 'utf8');
-  const hover = css.match(/\.session-hud \.hud-selectable:hover[^{}]*\{([^}]*)\}/)[1];
-  assert.match(hover, /color: inherit/);
-  assert.match(hover, /background: var\(--shell-hover-background\)/);
-  assert.doesNotMatch(hover, /accent/);
+  assert.match(css, /\.session-hud \.hud-selectable \{ cursor: pointer; \}/);
+  const hover = css.match(/^\.session-hud \.hud-selectable:hover \{([^}]*)\}/m)[1];
+  const lightHover = css.match(/body\[data-theme="light"\] \.session-hud \.hud-selectable:hover \{([^}]*)\}/)[1];
+  assert.equal(hover.trim(), 'color: var(--shell-hover-foreground, #fff);');
+  assert.equal(lightHover.trim(), 'color: var(--shell-hover-foreground, #000);');
+  assert.doesNotMatch(css, /\.hud-selectable:focus-visible/);
   const menuHover = css.match(/\.hud-picker-choice:is\(:hover[^{}]*\{([^}]*)\}/)[1];
   assert.match(menuHover, /color: inherit/);
   assert.match(menuHover, /background: var\(--shell-hover-background\)/);
   assert.match(css, /\.hud-selectable:focus \{ outline: none/);
-  assert.match(css, /\.hud-selectable:focus-visible \{ box-shadow: inset 0 -1px var\(--shell-muted\)/);
   const picker = css.match(/\.hud-picker \{([^}]*)\}/)[1];
   assert.match(picker, /background: var\(--shell-sidebar-background\)/);
   assert.match(picker, /color: inherit/);
@@ -109,11 +141,12 @@ test('unknown and zero values are distinct, with no hardcoded model window or in
   const unknown = hud.describe(state({ sessionMetrics: {} }));
   assert.equal(unknown.context.text, '');
   const zero = hud.describe(state({ sessionMetrics: { contextTokens: 0, contextWindow: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }));
-  assert.equal(zero.tokens.text, '\u21910 \u21930');
   assert.equal(zero.context.hidden, false);
-  assert.equal(zero.context.text, '0/\u2014');
+  assert.equal(zero.context.text, '0 / \u2014');
   const uncached = hud.describe(state({ sessionMetrics: { inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } }));
-  assert.equal(uncached.context.text, 'Cache 0%');
+  assert.equal(uncached.context.text, '');
+  assert.equal(uncached.context.hidden, false);
+  assert.match(uncached.context.title, /Cache 0%/);
   const missingCacheWrite = hud.describe(state({ sessionMetrics: { inputTokens: 100, cacheReadTokens: 100 } }));
   assert.equal(missingCacheWrite.context.hidden, true);
 });
@@ -164,14 +197,15 @@ test('new conversations show only project and Git, then reveal real data without
   widget.render(state({ activeSessionId: '', sessionMetrics: {} }));
   assert.deepEqual(shown(), ['hud-project', 'hud-branch']);
   widget.render(state());
-  assert.deepEqual(shown(), ['hud-project', 'hud-branch', 'hud-tokens', 'hud-context']);
+  assert.deepEqual(shown(), ['hud-project', 'hud-branch', 'hud-context']);
   widget.render(state({ activeSessionId: 'another-session', sessionMetrics: {} }));
   assert.deepEqual(shown(), ['hud-project', 'hud-branch']);
   widget.render(state({ sessionMetrics: { contextTokens: 0, contextWindow: 200000,
     inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }));
   assert.equal(bar.children[3].hidden, false);
-  assert.equal(bar.children[4].children[1].textContent, '0% (0/200k) \u00b7 Cache 0%');
-  assert.equal(bar.children[4].hidden, false);
+  assert.equal(bar.children[3].children[1].textContent, '0 / 200k (0%)');
+  assert.match(bar.children[3].attributes['aria-label'], /Cache 0%/);
+  assert.equal(bar.children[3].hidden, false);
   const css = fs.readFileSync(require.resolve('../web/host.css'), 'utf8');
   assert.match(css, /\.session-hud > span\[hidden\]\s*\{\s*display: none;/);
 });
@@ -179,21 +213,22 @@ test('new conversations show only project and Git, then reveal real data without
 test('known context tokens stay visible without a window or a Context text label', () => {
   const document = documentFixture();
   const widget = hud.create(document);
-  const field = document.body.children[0].children[4];
+  const field = document.body.children[0].children[3];
   for (const contextWindow of [undefined, 0, -1, NaN, Infinity]) {
     widget.render(state({ sessionMetrics: { contextTokens: 22299, contextWindow,
       inputTokens: 22299, outputTokens: 252, cacheReadTokens: 0, cacheWriteTokens: 0 } }));
     assert.equal(field.hidden, false);
     assert.equal(field.children[0].tag, 'svg');
-    assert.equal(field.children[1].textContent, '22.3k/\u2014 \u00b7 Cache 0%');
+    assert.equal(field.children[1].textContent, '22.3k / \u2014');
+    assert.match(field.attributes['aria-label'], /Cache 0%/);
     assert.doesNotMatch(field.children[1].textContent, /Context|NaN|Infinity/);
     assert.equal(field.dataset.level, 'normal');
   }
   widget.render(state({ sessionMetrics: { contextTokens: 0 } }));
   assert.equal(field.hidden, false);
-  assert.equal(field.children[1].textContent, '0/\u2014');
+  assert.equal(field.children[1].textContent, '0 / \u2014');
   widget.render(state());
-  assert.equal(field.children[1].textContent, '42% (84k/200k) \u00b7 Cache 75%');
+  assert.equal(field.children[1].textContent, '84k / 200k (42%)');
   widget.render(state({ activeSessionId: 'another-session', sessionMetrics: {} }));
   assert.equal(field.hidden, true);
   assert.equal(field.children[1].textContent, '');
@@ -204,12 +239,12 @@ test('incomplete token and cache counters stay hidden independently of known con
   const widget = hud.create(document);
   const bar = document.body.children[0];
   widget.render(state({ sessionMetrics: { contextTokens: 100, inputTokens: 100 } }));
-  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, true, false]);
-  assert.equal(bar.children[4].children[1].textContent, '100/\u2014');
+  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, false]);
+  assert.equal(bar.children[3].children[1].textContent, '100 / \u2014');
   widget.render(state({ sessionMetrics: { contextTokens: 100, contextWindow: 1000 } }));
-  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, true, false]);
+  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, false]);
   widget.render(state({ sessionMetrics: { inputTokens: 100, outputTokens: 0 } }));
-  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, false, true]);
+  assert.deepEqual(bar.children.map(field => field.hidden), [false, false, true, true]);
 });
 
 test('HUD only shows under a ready, visible extension view', () => {
@@ -219,47 +254,43 @@ test('HUD only shows under a ready, visible extension view', () => {
   }
 });
 
-test('project and Git stay left while context and tokens align right, including tokens-only data', () => {
+test('project and Git stay left while the context ring aligns right without input/output counters', () => {
   const document = documentFixture();
   const widget = hud.create(document);
   const bar = document.body.children[0];
   widget.render(state());
-  assert.deepEqual(bar.children.map(field => field.className), ['hud-project', 'hud-branch', 'hud-changes', 'hud-tokens', 'hud-context']);
+  assert.deepEqual(bar.children.map(field => field.className), ['hud-project', 'hud-branch', 'hud-changes', 'hud-context']);
   widget.render(state({ sessionMetrics: { inputTokens: 100, outputTokens: 0 } }));
-  assert.equal(bar.children[3].hidden, false);
-  assert.equal(bar.children[4].hidden, true);
+  assert.equal(bar.children[3].hidden, true);
+  assert.equal(bar.children.some(field => field.className === 'hud-tokens'), false);
   const css = fs.readFileSync(require.resolve('../web/host.css'), 'utf8');
-  assert.match(css, /\.session-hud > \.hud-tokens,\s*\.session-hud > \.hud-tokens\[hidden\] \+ \.hud-context\s*\{\s*margin-left: auto;/);
+  assert.match(css, /\.session-hud > \.hud-context\s*\{\s*margin-left: auto;/);
 });
 
-test('fields have safe text and accessible names; only tokens omit the redundant group icon', () => {
+test('fields have safe text and accessible names', () => {
   const document = documentFixture();
   const widget = hud.create(document);
   const bar = document.body.children[0];
   widget.render(state());
   assert.equal(bar.hidden, true, 'Wait for composer geometry before showing the HUD');
   widget.layout({ left: 300, top: 760, width: 680 });
-  assert.equal(bar.children.length, 5);
+  assert.equal(bar.children.length, 4);
   assert.equal(bar.hidden, false);
   for (const field of bar.children) {
     if (field.className === 'hud-changes') {
       assert.equal(field.hidden, true);
-    } else if (field.className === 'hud-tokens') {
-      assert.equal(field.children.length, 1);
-      assert.equal(field.children[0].tag, 'span');
-      assert.equal(field.children[0].textContent, '\u219110k \u21934k');
     } else {
       assert.equal(field.children[0].tag, 'svg');
       assert.equal(field.children[0].attributes['aria-hidden'], 'true');
       assert.ok(field.children[0].children.length > 0);
     }
     assert.ok(field.attributes['aria-label']);
-    assert.ok(field.title);
+    if (field.className !== 'hud-context') assert.ok(field.title);
   }
   widget.render(state({ project: { name: '<script>bad()</script>', gitStatus: 'branch', branch: 'feature/<test>' }, sessionMetrics: {} }));
   assert.equal(bar.children[0].children[1].textContent, '<script>bad()</script>');
   assert.equal(bar.children[1].children[1].textContent, 'feature/<test>');
-  assert.equal(bar.children[4].children[1].textContent, '');
+  assert.equal(bar.children[3].children[1].textContent, '');
   widget.layout({ left: 252, top: 700, width: 600 });
   assert.deepEqual(bar.style, { left: '252px', top: '700px', width: '600px' });
   const css = fs.readFileSync(require.resolve('../web/host.css'), 'utf8');
@@ -278,14 +309,15 @@ async function desktopFixture(platform = 'darwin') {
   const window = { __goDesktopConfig: { platform, token: 'fixture' }, goHUD: hud,
     addEventListener(name, callback) { handlers.set(name, callback); } };
   const context = {
-    window, URL, document: { ...document, getElementById: () => null }, innerWidth: 1200, innerHeight: 800,
+    window, URL, document: { ...document, documentElement: { style: { setProperty() {} } }, getElementById: () => null }, innerWidth: 1200, innerHeight: 800,
+    setTimeout: () => 1, clearTimeout() {},
     fetch: async url => ({ ok: true, text: async () => JSON.stringify(url === '/api/project' ? latest.project : latest) }),
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('../web/desktop.js'), 'utf8'), context);
   await window.desktop.getState();
   const frame = document.body.children.find(child => child.tag === 'iframe');
   const bar = document.body.children.find(child => child.className === 'session-hud');
-  const report = (rect, viewport = { width: 948, height: 800 }, extra = {}) => handlers.get('message')({
+  const report = (rect, viewport = { width: 952, height: 800 }, extra = {}) => handlers.get('message')({
     source: frame.contentWindow, origin: 'http://127.0.0.1:1234',
     data: { type: 'claude-host:composer', rect, viewport, hasDraft: false }, ...extra,
   });
@@ -296,11 +328,11 @@ async function desktopFixture(platform = 'darwin') {
 test('HUD follows the actual composer without reducing iframe height, including sidebar and Output changes', async () => {
   const { frame, bar, report, update } = await desktopFixture();
   assert.equal(frame.style.height, '800px');
-  assert.equal(frame.style.left, '252px');
+  assert.equal(frame.style.left, '248px');
   assert.equal(bar.hidden, true);
   report({ left: 100, top: 648, width: 680, height: 124 });
   assert.equal(bar.hidden, false);
-  assert.deepEqual(bar.style, { left: '352px', top: '776px', width: '680px' });
+  assert.deepEqual(bar.style, { left: '348px', top: '776px', width: '680px' });
   assert.equal(800 - parseFloat(bar.style.top) - hud.height, 4);
   await update({ sidebarCollapsed: true, logsOpen: true });
   assert.equal(frame.style.top, '30px');
@@ -349,20 +381,22 @@ test('narrow windows and Windows titlebars preserve exact composer alignment', a
   assert.deepEqual(h.bar.style, { left: '16px', top: '676px', width: '358px' });
 });
 
-test('clicking change statistics refreshes Git without requiring an empty draft or a new chat', () => {
+test('clicking change statistics opens a dialog without requiring an empty draft or a new chat', () => {
   const document = documentFixture();
-  let refreshes = 0;
-  const bar = hud.create(document, { changes: () => refreshes++ });
+  let opens = 0;
+  const bar = hud.create(document, { changes: () => opens++ });
   bar.layout({ left: 0, top: 100, width: 600 });
   bar.render(state({ canSelectProject: false, project: { changes: { files: 1, untracked: 0, added: 2, deleted: 1, binary: 0 } } }));
   bar.setDraft(true);
   const field = document.body.children[0].children[2];
   assert.equal(field.attributes.role, 'button');
-  assert.equal(field.attributes['aria-haspopup'], undefined);
+  assert.equal(field.attributes['aria-haspopup'], 'dialog');
+  assert.match(field.title, /Click to view changed files and diffs/);
+  assert.doesNotMatch(field.title, /Click to refresh/);
   field.handlers.click();
   field.handlers.keydown({ key: 'Enter', preventDefault() {} });
-  assert.equal(refreshes, 2);
+  assert.equal(opens, 2);
   bar.render(state({ phase: 'setup' }));
   field.handlers.click();
-  assert.equal(refreshes, 2, 'hidden HUD must not refresh');
+  assert.equal(opens, 2, 'hidden HUD must not open Changes');
 });

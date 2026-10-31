@@ -44,15 +44,18 @@ func (a *App) snapshot() map[string]any {
 	key := sessions.Key(workspace, a.activeSessionID)
 	result := map[string]any{
 		"phase": a.phase, "label": a.label, "error": a.errorText,
-		"workspace": workspace, "theme": theme, "version": a.version,
+		"workspace": workspace, "theme": theme, "themeKind": themeKind(theme), "themeFamily": themeFamily(theme).ID, "version": a.version,
 		"windowVisible": !a.windowHidden,
 		"nativeMenu":    a.native.ShowMenu != nil,
 		"views":         views, "logs": append([]string{}, a.logs...), "dataDir": a.cfg.DataDir,
 		"logsOpen": a.logsOpen, "settingsOpen": a.settingsOpen, "pluginSetupOpen": a.pluginSetupOpen,
-		"setupCanStart": a.prepared != nil && (a.setupStatus == "ready" || a.setupStatus == "cancelled" || a.phase == "active"),
-		"setupComplete": a.state.SetupComplete,
-		"sidebarWidth":  a.state.SidebarWidth, "sidebarCollapsed": a.state.SidebarCollapsed,
+		"pluginUpdating": a.pluginUpdating,
+		"setupCanStart":  a.prepared != nil && (a.setupStatus == "ready" || a.setupStatus == "cancelled" || a.phase == "active"),
+		"setupComplete":  a.state.SetupComplete,
+		"sidebarWidth":   a.state.SidebarWidth, "sidebarCollapsed": a.state.SidebarCollapsed,
 		"transcriptWidth":  a.state.TranscriptWidth,
+		"interfaceSize":    a.state.InterfaceSize,
+		"sidebarOptions":   SidebarOptions{Display: a.state.SidebarOptions.Display, Sort: a.state.SidebarOptions.Sort, Order: append([]string(nil), a.state.SidebarOptions.Order...), ProjectOrder: append([]string(nil), a.state.SidebarOptions.ProjectOrder...)},
 		"activeSessionId":  a.activeSessionID,
 		"canSelectProject": a.selectionErrorLocked(a.active, workspace) == nil,
 		"sessionMetrics":   a.metrics[key],
@@ -98,7 +101,7 @@ func (a *App) snapshot() map[string]any {
 		}
 		visible := make([]map[string]any, 0)
 		for _, item := range items {
-			value := map[string]any{"id": item.ID, "title": item.Title, "updatedAt": item.UpdatedAt, "archived": item.Archived, "active": p == workspace && item.ID == result["activeSessionId"], "workspace": p, "workspaceName": filepath.Base(p)}
+			value := map[string]any{"id": item.ID, "title": item.Title, "createdAt": item.CreatedAt, "updatedAt": item.UpdatedAt, "archived": item.Archived, "active": p == workspace && item.ID == result["activeSessionId"], "workspace": p, "workspaceName": filepath.Base(p)}
 			status := live[sessions.Key(p, item.ID)]
 			value["status"] = status.Status
 			value["completionUnread"] = status.Status == "completed" && status.CompletedAt > metadata[sessions.Key(p, item.ID)].ReadAt && value["active"] != true

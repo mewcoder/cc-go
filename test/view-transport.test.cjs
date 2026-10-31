@@ -41,6 +41,27 @@ function fixture() {
   };
 }
 
+test('context dialog opens only from the shell and uses the latest native callback', () => {
+  const h = fixture();
+  const open = (origin = 'http://127.0.0.1:4321', source = h.window.parent) => h.emit('message', {
+    source, origin, data: { type: 'claude-host:open-context' }, stopImmediatePropagation() {},
+  });
+  let first = 0, second = 0;
+  const callback = () => first++;
+  assert.equal(h.window.__goContext.attach(callback), callback);
+  assert.equal(h.reports.at(-1).type, 'claude-host:context-ready');
+  open('https://foreign.example');
+  open(undefined, {});
+  assert.equal(first, 0);
+  open();
+  assert.equal(first, 1);
+  h.window.__goContext.attach(() => second++);
+  open();
+  assert.equal(first, 1);
+  assert.equal(second, 1);
+  assert.equal(h.calls.length, 0, 'Opening the dialog must not send a chat message or change a draft');
+});
+
 test('view transport uses an upgraded socket and queues initialization until the plugin listens', async () => {
   const h = fixture();
   assert.equal(h.sockets[0].url, 'ws://127.0.0.1:1234/view/id/token/socket?since=0');

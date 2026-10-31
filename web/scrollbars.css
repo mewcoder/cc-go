@@ -10,6 +10,12 @@
   --host-scrollbar-active: #00000060;
 }
 
+:root:has(body[data-color-theme]:not([data-color-theme="dark"]):not([data-color-theme="light"])) {
+  --host-scrollbar-thumb: var(--vscode-scrollbarSlider-background);
+  --host-scrollbar-hover: var(--vscode-scrollbarSlider-hoverBackground);
+  --host-scrollbar-active: var(--vscode-scrollbarSlider-activeBackground);
+}
+
 /* Reset native colors so WebKit and WebView2 use the same custom thumb. */
 :root, :root * { scrollbar-color: auto !important; }
 :is(.workspace-list, .archive-section, .archive-list, .log-output, .settings-content) { scrollbar-width: auto; }

@@ -23,7 +23,7 @@ async function fixture(platform, nativeMenu = true) {
   node('window-controls'); node('connection-status');
   const window = { __goDesktopConfig: { platform, native: false, token: 'fixture' },
     addEventListener: (key, fn) => events.set(key, fn) };
-  vm.runInNewContext(source, { window, document: { body: null,
+  vm.runInNewContext(source, { window, document: { body: null, documentElement: { style: { setProperty() {} } },
     getElementById: id => nodes.find(node => node.id === id),
     createElement: () => node(), createElementNS: () => node(),
   }, setTimeout: () => 1, clearTimeout() {}, console,

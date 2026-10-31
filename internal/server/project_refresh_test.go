@@ -113,6 +113,35 @@ func TestProjectRefreshCacheDeduplicatesWithoutIdleExpiration(t *testing.T) {
 	}
 }
 
+func TestInvalidatedProjectReadPreservesOnlyTheSameWorkspaceCache(t *testing.T) {
+	for _, cachedPath := range []string{"/workspace", "/another-workspace"} {
+		t.Run(cachedPath, func(t *testing.T) {
+			cache := projectCache{
+				info: ProjectInfo{Path: cachedPath, Branch: "known", GitStatus: "branch"},
+			}
+			var reads int
+			cache.read = func(_ context.Context, directory string) ProjectInfo {
+				reads++
+				if reads == 1 {
+					cache.invalidate()
+				}
+				return ProjectInfo{Path: directory, Branch: "new", GitStatus: "branch"}
+			}
+			got := cache.getContext(t.Context(), "/workspace", true)
+			if cachedPath == "/workspace" {
+				if got.Branch != "known" {
+					t.Fatalf("interrupted refresh erased known branch: %+v", got)
+				}
+			} else if got.Branch != "" || got.Path != "/workspace" {
+				t.Fatalf("interrupted refresh reused another project's branch: %+v", got)
+			}
+			if got := cache.getContext(t.Context(), "/workspace", true); got.Branch != "new" || reads != 2 {
+				t.Fatalf("invalidation did not allow a new read: %+v (%d reads)", got, reads)
+			}
+		})
+	}
+}
+
 func TestProjectRequestsPauseOutsideVisibleConversationOnAllPlatforms(t *testing.T) {
 	a := testApp(t)
 	a.phase, a.pluginSetupOpen = "active", false

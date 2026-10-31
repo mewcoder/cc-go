@@ -7,6 +7,7 @@ const { JsonStore } = require('./host-storage.cjs');
 const { Uri, EventEmitter, Disposable, FileType, FileSystemError } = types;
 
 const desktopConfigurationDefaults = {
+  'claudeCode.archiveInactiveSessions': 0,
   'claudeCode.allowDangerouslySkipPermissions': true,
   'claudeCode.hideOnboarding': true,
   'claudeCode.disableLoginPrompt': true,
@@ -247,6 +248,10 @@ async function createVscodeApi(options, peer) {
     },
   };
   commands.registerCommand('setContext', (key, value) => { contexts.set(key, value); });
+  commands.registerCommand('revealFileInOS', uri => {
+    if (uri?.scheme !== 'file' || uri.authority) throw new Error('revealFileInOS requires a local file URI');
+    return peer.call('file.reveal', { path: uri.fsPath });
+  });
   commands.registerCommand('workbench.action.lockEditorGroup', () => { group.isLocked = true; });
   commands.registerCommand('workbench.action.unlockEditorGroup', () => { group.isLocked = false; });
   for (const command of ['workbench.action.focusActiveEditorGroup', 'workbench.action.focusFirstEditorGroup']) {
@@ -419,6 +424,15 @@ async function createVscodeApi(options, peer) {
   return {
     vscode, context, getSettings, updateSetting,
     receiveWebviewMessage: (id, message) => panels.get(id)?.receive(message),
+    async activateSession(id, sessionId) {
+      const panel = panels.get(id);
+      if (!panel) return false;
+      focusPanel(id);
+      return panel.webview.postMessage({ type: 'from-extension', message: {
+        type: 'request', channelId: '', requestId: '',
+        request: { type: 'activate_session', sessionId },
+      } });
+    },
     async dispose() {
       for (const panel of [...panels.values()]) panel.dispose();
       for (const subscription of subscriptions.splice(0).reverse()) subscription.dispose();

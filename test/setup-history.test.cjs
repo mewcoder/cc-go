@@ -20,6 +20,8 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
       this.disabled = false;
       this.checked = false;
       this.handlers = {};
+      this.style = {};
+      this.rect = { left: 200, top: 40, right: 240, bottom: 66, width: 40, height: 26 };
       this.classList = { add() {}, toggle() {} };
       elements.push(this);
     }
@@ -61,6 +63,8 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
     showModal() { this.open = true; }
     close() { this.open = false; }
     focus() { focused = this; }
+    getBoundingClientRect() { return this.rect; }
+    contains(target) { return this === target || this.children.some(child => child.contains(target)); }
   }
   const make = (tag, id, parent) => {
     const element = new Element(tag);
@@ -72,6 +76,7 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
   const sidebarHeader = make('div', 'sidebar-header', body);
   make('h2', '', sidebarHeader);
   make('button', 'add-workspace', sidebarHeader);
+  make('button', 'plugin-update', body);
   const root = make('section', 'plugin-setup', body);
   const heading = make('div', '', root);
   heading.className = 'setup-heading';
@@ -95,10 +100,16 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
     pluginSetup: { nodeVersion: 'v22.0.0', readyVersion: '2.1.312', runtimeReady: true, status: 'ready', step: 2 },
     workspaces: [{ path: '/projects/added' }],
   };
-  const window = { desktop: {
+  const window = { __goShowArchive: () => calls.push('show-archive'), goSidebarList: require('../web/sidebar-list.js'), desktop: {
     formatPath,
     nativeExternalLinks,
     onState(callback) { onState = callback; },
+    setSidebarOptions: async value => {
+      if (failure) throw failure;
+      calls.push(value);
+      state.sidebarOptions = { display: 'grouped', sort: 'updated', ...state.sidebarOptions, ...value };
+      onState(state);
+    },
     checkPlugin: async () => calls.push('check'),
     checkPluginUpdates: async () => calls.push('check-update'),
     reloadPlugin: async () => calls.push('update-plugin'),
@@ -115,10 +126,10 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
     },
     startUsing: async () => calls.push('start'),
   } };
-  const byID = id => elements.find(element => element.id === id);
+  const byID = id => elements.findLast(element => element.id === id);
   const context = {
     window,
-    document: { body, getElementById: byID, createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag) },
+    document: { body, documentElement: { clientWidth: 800, clientHeight: 600 }, get activeElement() { return focused; }, getElementById: byID, createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag) },
   };
   for (const file of ['history.js', 'setup.js']) {
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../web', file), 'utf8'), context);
@@ -150,16 +161,24 @@ test('setup only has short English labels without product copy or a manual-insta
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../web/setup.js'), 'utf8'), /\p{Script=Han}/u);
 });
 
-test('history import moves to an accessible Workspace icon outside initialization', async () => {
+test('history import lives in the Project actions menu outside initialization', async () => {
   const h = setupHarness();
   assert.equal(h.byID('setup-steps').children.length, 2);
   assert.equal(h.byID('plugin-setup').querySelector('.history-dialog'), null);
   const opener = h.byID('import-history');
-  assert.equal(opener.nextElementSibling.id, 'add-workspace');
-  assert.equal(opener.attributes['aria-label'], 'Import Claude Code CLI sessions');
+  const more = h.byID('project-more');
+  assert.equal(more.nextElementSibling.id, 'add-workspace');
+  assert.equal(more.attributes['aria-label'], 'Project actions');
+  assert.equal(more.attributes['aria-haspopup'], 'menu');
+  assert.equal(more.attributes['aria-expanded'], 'false');
+  assert.equal(opener.parentElement.id, 'project-menu');
+  assert.equal(opener.attributes.role, 'menuitem');
+  assert.equal(opener.attributes['aria-label'], 'Import Claude Code CLI Sessions');
   assert.equal(opener.attributes['aria-haspopup'], 'dialog');
-  assert.equal(opener.children[0].tagName, 'svg');
+  assert.equal(opener.children[0].tagName, 'span');
+  assert.equal(opener.children[0].textContent, 'Import');
   assert.equal(opener.disabled, true);
+  assert.equal(more.disabled, true);
   assert.equal(h.byID('setup-start').disabled, false);
   await h.byID('setup-start').onclick();
   assert.deepEqual(h.calls, ['start']);
@@ -167,6 +186,131 @@ test('history import moves to an accessible Workspace icon outside initializatio
   h.state.pluginSetupOpen = false;
   h.render();
   assert.equal(opener.disabled, false);
+  assert.equal(more.disabled, false);
+  more.onclick();
+  assert.equal(h.byID('project-menu').open, true);
+  assert.equal(more.attributes['aria-expanded'], 'true');
+  assert.equal(h.focused.id, 'sidebar-display');
+  assert.deepEqual(h.calls, ['start']);
+  await opener.onclick();
+  assert.equal(h.byID('project-menu').open, false);
+  assert.equal(more.attributes['aria-expanded'], 'false');
+  assert.equal(h.byID('history-dialog').open, true);
+});
+
+test('Project actions supports keyboard dismissal, outside click, and viewport clamping', () => {
+  const h = setupHarness('active');
+  const more = h.byID('project-more'), menu = h.byID('project-menu');
+  more.rect = { left: 790, bottom: 590 };
+  menu.rect = { left: 552, top: 552, right: 792, bottom: 592, width: 240, height: 40 };
+  let prevented = 0;
+  more.handlers.keydown({ key: 'ArrowDown', preventDefault() { prevented++; } });
+  assert.equal(prevented, 1);
+  assert.equal(menu.open, true);
+  assert.equal(menu.style.left, '552px');
+  assert.equal(menu.style.top, '552px');
+  menu.handlers.keydown({ key: 'Escape', preventDefault() { prevented++; } });
+  assert.equal(menu.open, false);
+  assert.equal(h.focused, more);
+  more.onclick();
+  menu.handlers.click({ target: menu, clientX: 0, clientY: 0 });
+  assert.equal(menu.open, false);
+  more.onclick();
+  menu.handlers.keydown({ key: 'Tab' });
+  assert.equal(menu.open, false);
+});
+
+test('Project actions closes when settings open or the app becomes unavailable', () => {
+  const h = setupHarness('active');
+  const more = h.byID('project-more'), menu = h.byID('project-menu');
+  more.onclick();
+  h.state.settingsOpen = true;
+  h.render();
+  assert.equal(menu.open, false);
+  assert.equal(more.disabled, true);
+  h.state.settingsOpen = false;
+  h.render();
+  more.onclick();
+  h.state.phase = 'activating';
+  h.render();
+  assert.equal(menu.open, false);
+  assert.equal(more.attributes['aria-expanded'], 'false');
+});
+
+test('Archived Chats is a keyboard-accessible Project action that closes the menu and opens the sidebar view', () => {
+  const h = setupHarness('active');
+  const menu = h.byID('project-menu'), more = h.byID('project-more'), archived = h.byID('show-archive');
+  assert.equal(archived.parentElement, menu);
+  assert.equal(archived.attributes.role, 'menuitem');
+  assert.equal(archived.attributes['aria-controls'], 'archive-list');
+  more.onclick();
+  const next = () => menu.handlers.keydown({ key: 'ArrowDown', preventDefault() {} });
+  next();
+  assert.equal(h.focused, h.byID('sidebar-sort'));
+  next();
+  assert.equal(h.focused, archived);
+  archived.onclick();
+  assert.equal(menu.open, false);
+  assert.equal(more.attributes['aria-expanded'], 'false');
+  assert.deepEqual(h.calls, ['show-archive']);
+  assert.notEqual(h.byID('history-dialog').open, true);
+  h.state.settingsOpen = true;
+  h.render();
+  assert.equal(archived.disabled, true);
+  archived.onclick();
+  assert.deepEqual(h.calls, ['show-archive']);
+});
+
+test('sidebar display and sorting submenus show the saved choice and persist changes', async () => {
+  const h = setupHarness('active');
+  const more = h.byID('project-more');
+  more.onclick();
+  assert.equal(h.byID('sidebar-display').children[0].textContent, 'Group by');
+  assert.equal(h.byID('sidebar-display').summary.textContent, 'Project');
+  assert.equal(h.byID('sidebar-sort').children[0].textContent, 'Sort by');
+  assert.equal(h.byID('sidebar-sort').summary.textContent, 'Last updated');
+  assert.equal(h.byID('sidebar-display').children.filter(child => child.tagName === 'svg').length, 1);
+  assert.equal(h.byID('import-history').children.some(child => child.tagName === 'svg'), false);
+  h.byID('sidebar-display').onclick();
+  assert.equal(h.byID('project-submenu').hidden, false);
+  assert.equal(h.byID('sidebar-display-grouped').attributes['aria-checked'], 'true');
+  assert.equal(h.byID('sidebar-display-merged').attributes['aria-checked'], 'false');
+  await h.byID('sidebar-display-merged').onclick();
+  assert.equal(h.state.sidebarOptions.display, 'merged');
+  assert.equal(h.byID('sidebar-display').summary.textContent, 'None');
+  assert.equal(h.byID('project-menu').open, false);
+  more.onclick();
+  h.byID('sidebar-sort').onclick();
+  assert.equal(h.byID('sidebar-sort-updated').attributes['aria-checked'], 'true');
+  assert.equal(h.byID('sidebar-sort-created').children[0].textContent, 'Date Created');
+  await h.byID('sidebar-sort-created').onclick();
+  assert.equal(h.state.sidebarOptions.sort, 'created');
+  assert.equal(h.byID('sidebar-sort').summary.textContent, 'Date Created');
+  more.onclick();
+  h.byID('sidebar-sort').onclick();
+  assert.equal(h.byID('sidebar-sort-created').attributes['aria-checked'], 'true');
+  assert.equal(h.byID('sidebar-sort-updated').attributes['aria-checked'], 'false');
+  await h.byID('sidebar-sort-manual').onclick();
+  assert.equal(h.state.sidebarOptions.sort, 'manual');
+  assert.equal(h.byID('sidebar-sort').summary.textContent, 'Manual');
+  assert.equal(h.state.sidebarOptions.display, 'merged');
+  more.onclick();
+  h.byID('sidebar-sort').onclick();
+  assert.equal(h.byID('sidebar-sort-manual').attributes['aria-checked'], 'true');
+});
+
+test('failed sidebar option saves keep the menu open and preserve the saved choice', async () => {
+  const h = setupHarness('active');
+  h.byID('project-more').onclick();
+  h.byID('sidebar-display').onclick();
+  h.failure = Error('Disk full');
+  await h.byID('sidebar-display-merged').onclick();
+  assert.equal(h.state.sidebarOptions, undefined);
+  assert.equal(h.byID('project-menu').open, true);
+  assert.equal(h.byID('sidebar-display-grouped').attributes['aria-checked'], 'true');
+  assert.equal(h.byID('sidebar-display-merged').attributes['aria-checked'], 'false');
+  assert.equal(h.byID('sidebar-display-merged').disabled, false);
+  assert.equal(h.byID('project-more').disabled, false);
 });
 
 test('environment card keeps system information visible after Node is ready', () => {
@@ -501,6 +645,28 @@ test('updates use explicit check, available, latest and apply states without dup
   assert.equal(status.attributes.role, 'alert');
 });
 
+test('sidebar update shows download progress without opening a setup dialog', () => {
+  const h = setupHarness('active');
+  Object.assign(h.state, { setupComplete: true, pluginSetupOpen: false });
+  Object.assign(h.state.pluginSetup, { status: 'idle', latestVersion: '2.1.313', updateAvailable: true });
+  h.render();
+  const indicator = h.byID('plugin-update');
+  assert.equal(indicator.hidden, false);
+  assert.equal(indicator.disabled, false);
+  assert.equal(indicator.title, 'Update plugin to 2.1.313');
+  h.state.phase = 'preparing';
+  Object.assign(h.state.pluginSetup, { status: 'downloading', targetVersion: '2.1.313', received: 5 << 20, total: 10 << 20 });
+  h.render();
+  assert.equal(indicator.hidden, false);
+  assert.equal(indicator.disabled, true);
+  assert.match(indicator.title, /Downloading.*50%/);
+  assert.equal(h.byID('plugin-setup').parent.open, undefined);
+  h.state.phase = 'active';
+  Object.assign(h.state.pluginSetup, { status: 'idle', readyVersion: '2.1.313', updateAvailable: false });
+  h.render();
+  assert.equal(indicator.hidden, true);
+});
+
 test('a failed first download keeps its error visible even without a version', () => {
   const h = setupHarness();
   h.state.pluginSetup = { nodeVersion: 'v22.0.0', status: 'cancelled', step: 1, updateError: 'Network unavailable' };
@@ -591,7 +757,7 @@ test('setup save warnings are nonfatal, survive polling and clear after a succes
 test('CLI sessions import is compact and has no description or selection instructions', async () => {
   const h = setupHarness('active');
   await h.byID('import-history').onclick();
-  assert.equal(h.byID('history-title').textContent, 'Import Claude Code CLI sessions');
+  assert.equal(h.byID('history-title').textContent, 'Import Claude Code CLI Sessions');
   assert.equal(h.cancelButton.textContent, 'Cancel');
   assert.equal(h.importButton.textContent, 'Import');
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../web/history.js'), 'utf8'), /\p{Script=Han}/u);
@@ -642,7 +808,7 @@ test('history picker imports multiple projects and omits already added projects'
   await h.importButton.onclick();
   assert.deepEqual(Array.from(h.calls[0]), ['/projects/one', '/projects/two']);
   assert.equal(h.byID('history-dialog').open, false);
-  assert.equal(h.focused.id, 'import-history');
+  assert.equal(h.focused.id, 'project-more');
   assert.equal(h.byID('setup-start').disabled, false);
   await h.byID('import-history').onclick();
   assert.equal(h.inputs.length, 0);

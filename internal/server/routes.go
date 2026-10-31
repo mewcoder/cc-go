@@ -41,6 +41,10 @@ func (a *App) Handler() http.Handler {
 			return
 		}
 		filename := strings.TrimPrefix(r.URL.Path, "/")
+		if strings.HasPrefix(filename, "code-themes/") {
+			serveCodeTheme(w, r, strings.TrimPrefix(filename, "code-themes/"))
+			return
+		}
 		if filename == "host-config.js" {
 			platform := runtime.GOOS
 			if platform == "windows" {
@@ -57,7 +61,16 @@ func (a *App) Handler() http.Handler {
 		if filename == "" || filename == "index.html" {
 			filename = "shell.html"
 		}
-		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "history.js": true, "setup.js": true, "settings-width.js": true, "hud.js": true, "selection.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
+		if filename == "theme-palettes.css" {
+			w.Header().Set("Content-Type", "text/css; charset=utf-8")
+			if r.Method != "HEAD" {
+				_, _ = w.Write([]byte(themePalettesCSS))
+			}
+			return
+		}
+		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "native-relay.js": true, "history.js": true, "chat-search.js": true, "sidebar-list.js": true, "setup.js": true, "settings-width.js": true, "settings-interface-size.js": true, "settings-theme.js": true, "code-themes.js": true, "hud.js": true, "selection.js": true, "git-review.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
+		allowed["vendor/diff2html/diff2html.min.js"] = true
+		allowed["vendor/diff2html/diff2html.min.css"] = true
 		if !allowed[filename] {
 			http.NotFound(w, r)
 			return
@@ -71,7 +84,7 @@ func (a *App) Handler() http.Handler {
 		case filename == "shell.html":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			html := strings.Replace(string(b), "frame-src 'none'", "frame-src "+a.ViewURL+"; connect-src 'self'", 1)
-			html = strings.Replace(html, `<script src="shell.js"`, `<link rel="stylesheet" href="host.css"><link rel="stylesheet" href="scrollbars.css"><script src="host-config.js"></script><script src="hud.js"></script><script src="selection.js"></script><script src="desktop.js"></script><script src="workspace-menu.js" defer></script><script src="history.js" defer></script><script src="setup.js" defer></script><script src="settings-width.js" defer></script><script src="shell.js"`, 1)
+			html = strings.Replace(html, `<script src="shell.js"`, `<link rel="stylesheet" href="vendor/diff2html/diff2html.min.css"><link rel="stylesheet" href="host.css"><link rel="stylesheet" href="scrollbars.css"><script src="host-config.js"></script><script src="hud.js"></script><script src="selection.js"></script><script src="native-relay.js"></script><script src="vendor/diff2html/diff2html.min.js"></script><script src="git-review.js"></script><script src="desktop.js"></script><script src="workspace-menu.js" defer></script><script src="sidebar-list.js" defer></script><script src="history.js" defer></script><script src="chat-search.js" defer></script><script src="setup.js" defer></script><script src="settings-width.js" defer></script><script src="settings-interface-size.js" defer></script><script src="shell.js"`, 1)
 			b = []byte(html)
 		case strings.HasSuffix(filename, ".js"):
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
@@ -138,6 +151,10 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.cancelDownload()
 	case "/api/project":
 		result = a.projectInfo(ctx, args.Workspace, args.Force)
+	case "/api/git-changes":
+		result, err = a.gitReviewRequest(ctx, args.Workspace, "", false)
+	case "/api/git-diff":
+		result, err = a.gitReviewRequest(ctx, args.Workspace, args.Path, true)
 	case "/api/view-draft":
 		err = a.setViewDraft(args.ID, args.Draft)
 	case "/api/open-workspace-folder":
@@ -173,6 +190,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 				err = a.activateChosenWorkspace(ctx)
 				if err != nil {
 					a.fail(err)
+				} else {
+					a.cleanupPluginCache()
 				}
 			}
 		}
@@ -209,6 +228,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			if args.Persist {
 				err = a.saveLocked()
 			}
+		case "sidebar-options":
+			err = a.saveSidebarOptionsLocked(args.Value)
 		case "transcript-width":
 			var value string
 			if json.Unmarshal(args.Value, &value) != nil || !validTranscriptWidth(value) {
@@ -222,6 +243,22 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			message, _ := json.Marshal(map[string]string{"_claudeHostTranscriptWidth": value})
+			for _, view := range a.views {
+				_ = view.post(message)
+			}
+		case "interface-size":
+			var value string
+			if json.Unmarshal(args.Value, &value) != nil || !validInterfaceSize(value) {
+				err = errors.New("invalid interface size")
+				break
+			}
+			previous := a.state.InterfaceSize
+			a.state.InterfaceSize = value
+			if err = a.saveLocked(); err != nil {
+				a.state.InterfaceSize = previous
+				break
+			}
+			message, _ := json.Marshal(map[string]string{"_claudeHostInterfaceSize": value})
 			for _, view := range a.views {
 				_ = view.post(message)
 			}
@@ -301,20 +338,27 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	case "/api/select", "/api/close":
 		err = a.changeView(args.ID, r.URL.Path == "/api/close")
 	case "/api/theme":
-		if args.Theme != "light" && args.Theme != "dark" {
+		a.mu.Lock()
+		selected, valid := selectTheme(a.state.Theme, args.Theme)
+		if !valid {
+			a.mu.Unlock()
 			err = errors.New("invalid theme")
 			break
 		}
-		a.mu.Lock()
-		a.state.Theme = args.Theme
+		previous := a.state.Theme
+		a.state.Theme = selected
 		err = a.saveLocked()
-		for _, v := range a.views {
-			message, _ := json.Marshal(map[string]string{"_claudeHostTheme": args.Theme})
-			_ = v.post(message)
+		if err != nil {
+			a.state.Theme = previous
+		} else {
+			message, _ := json.Marshal(map[string]any{"_claudeHostTheme": selected, "_claudeHostThemeKind": themeKind(selected), "_claudeHostThemeFamily": themeFamily(selected)})
+			for _, v := range a.views {
+				_ = v.post(message)
+			}
 		}
 		a.mu.Unlock()
 		if err == nil && native.SetTheme != nil {
-			native.SetTheme(args.Theme)
+			native.SetTheme(themeKind(selected))
 		}
 	case "/api/session-meta":
 		// HTML maxlength counts UTF-16 code units, not Unicode code points.

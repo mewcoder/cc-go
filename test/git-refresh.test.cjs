@@ -8,10 +8,10 @@ const source = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8'
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(platform = 'darwin') {
-  let now = 100000, blocked;
+  let now = 100000, blocked, projectResult;
   const events = new Map(), documentEvents = new Map(), calls = [], seen = [];
   const state = { phase: 'active', workspace: '/one', views: [], windowVisible: true };
-  const document = { body: null, hidden: false, getElementById: () => null,
+  const document = { body: null, hidden: false, documentElement: { style: { setProperty() {} } }, getElementById: () => null,
     addEventListener: (name, callback) => documentEvents.set(name, callback) };
   const window = { __goDesktopConfig: { platform, token: 'fixture' },
     addEventListener: (name, callback) => events.set(name, callback) };
@@ -21,7 +21,7 @@ function fixture(platform = 'darwin') {
       calls.push({ url, body });
       if (url === '/api/project' && blocked) await blocked;
       const data = url === '/api/state' ? { ...state }
-        : url === '/api/project' ? { path: body.workspace, branch: 'main' } : { ok: true };
+        : url === '/api/project' ? projectResult ?? { path: body.workspace, branch: 'main', gitStatus: 'branch' } : { ok: true };
       return { ok: true, text: async () => JSON.stringify(data) };
     }, console: { error() {} },
   });
@@ -31,6 +31,7 @@ function fixture(platform = 'darwin') {
     async refresh() { await window.desktop.getState(); await settle(); },
     async event(name, native = true) { (native ? events : documentEvents).get(name)?.(); await settle(); },
     set blocked(value) { blocked = value; },
+    set projectResult(value) { projectResult = value; },
     git: () => calls.filter(call => call.url === '/api/project'),
   };
 }
@@ -117,4 +118,59 @@ test('pending Git requests merge and cannot put a stale workspace into the HUD',
   await h.refresh();
   assert.equal(h.git().length, 2);
   assert.equal(h.seen.at(-1).project.path, '/two');
+});
+
+test('a Git reply discarded while the view loads is retried when the view becomes visible', async () => {
+  const h = fixture();
+  let release;
+  h.blocked = new Promise(resolve => { release = resolve; });
+  await h.refresh();
+  h.state.viewLoading = true;
+  await h.refresh();
+  release();
+  await settle();
+  assert.equal(h.seen.some(value => value.project?.branch === 'main'), false);
+  h.blocked = null;
+  h.state.viewLoading = false;
+  await h.refresh();
+  assert.equal(h.git().length, 2);
+  assert.equal(h.seen.at(-1).project.branch, 'main');
+  for (let i = 0; i < 5; i++) await h.refresh();
+  assert.equal(h.git().length, 2);
+});
+
+test('filesystem revisions reject an in-flight old reply and request the new branch', async () => {
+  const h = fixture();
+  h.state.projectRevision = 1;
+  let release;
+  h.blocked = new Promise(resolve => { release = resolve; });
+  await h.refresh();
+  h.state.projectRevision = 2;
+  await h.refresh();
+  release();
+  await settle();
+  assert.equal(h.seen.some(value => value.project?.branch === 'main'), false);
+  h.blocked = null;
+  h.projectResult = { path: '/one', branch: 'new-branch', gitStatus: 'branch' };
+  await h.refresh();
+  assert.equal(h.git().length, 2);
+  assert.equal(h.seen.at(-1).project.branch, 'new-branch');
+});
+
+test('unknown snapshots do not erase a known branch, while a verified no-Git result does', async () => {
+  const h = fixture();
+  h.state.project = { path: '/one', gitStatus: 'unknown' };
+  await h.refresh();
+  assert.equal(h.seen.at(-1).project.branch, 'main');
+  await h.refresh();
+  assert.equal(h.seen.at(-1).project.branch, 'main');
+  assert.equal(h.git().length, 1);
+  h.projectResult = { path: '/one', gitStatus: 'none' };
+  await h.window.desktop.refreshGit();
+  assert.equal(h.seen.at(-1).project.gitStatus, 'none');
+  h.state.workspace = '/two';
+  h.state.project = { path: '/two', gitStatus: 'unknown' };
+  h.state.viewLoading = true;
+  await h.refresh();
+  assert.equal(h.seen.at(-1).project.branch, undefined);
 });

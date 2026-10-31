@@ -10,7 +10,14 @@ const source = fs.readFileSync(path.join(__dirname, '../web/shell.js'), 'utf8');
 function fixture(count = 12) {
   let focused;
   const make = tag => ({ tag, children: [], attributes: {}, handlers: {}, hidden: false,
-    append(child) { child.remove(); child.parent = this; this.children.push(child); },
+    append(...children) {
+      for (const child of children) { child.remove(); child.parent = this; this.children.push(child); }
+    },
+    replaceChildren(...children) {
+      for (const child of [...this.children]) child.remove();
+      this.append(...children);
+    },
+    dataset: {},
     insertBefore(child, reference) {
       child.remove();
       child.parent = this;
@@ -35,18 +42,22 @@ function fixture(count = 12) {
   const lists = new Map();
   const collapsedWorkspaces = new Set();
   const context = { document: { createElement: make }, collapsedWorkspaces,
+    workspaceElements: entries, icon: () => make('svg'), saveCollapsed() {},
     createSessionRow(workspace, id) { return Object.assign(make('row'), { id }); },
     updateSessionRow(row, session) { row.title = session.title; },
     render() {
       for (const [workspace, entry] of entries) context.renderSessions(entry, workspace, lists.get(workspace), 'active');
     },
   };
+  const workspaceStart = source.indexOf('  function createWorkspaceNode(');
+  const workspaceEnd = source.indexOf('\n  function createSessionRow(', workspaceStart);
+  vm.runInNewContext(source.slice(workspaceStart, workspaceEnd), context);
   const start = source.indexOf('  function renderSessions(');
   const end = source.indexOf('\n  function renderArchive(', start);
   vm.runInNewContext(source.slice(start, end), context);
   function add(workspace, total) {
-    const entry = { sessionList: make('div'), sessions: new Map(), label: { textContent: workspace } };
-    entries.set(workspace, entry);
+    const entry = context.createWorkspaceNode(workspace);
+    entry.label.textContent = workspace;
     lists.set(workspace, Array.from({ length: total }, (_, i) => ({ id: String(i), title: `Chat ${i}` })));
     context.render();
     return entry;
@@ -87,13 +98,29 @@ test('zero to five chats never offer Show More and empty workspaces keep their h
   }
 });
 
-test('new chats, archives and collapse preserve pagination without stale rows', () => {
+test('collapse resets Show More for only that workspace, including after revealing every chat', () => {
+  const h = fixture();
+  const second = h.add('/other', 12);
+  second.loadMore.handlers.click();
+  for (const clicks of [1, 2]) {
+    for (let i = 0; i < clicks; i++) h.entry.loadMore.handlers.click();
+    assert.equal(h.ids().length, Math.min(5 + clicks * 5, 12));
+    h.entry.open.handlers.click();
+    assert.equal(h.collapsedWorkspaces.has('/project'), true);
+    assert.equal(h.entry.sessionList.hidden, true);
+    assert.equal(h.entry.sessionLimit, 5);
+    assert.equal(h.ids(second).length, 10);
+    h.entry.open.handlers.click();
+    assert.equal(h.entry.sessionList.hidden, false);
+    assert.equal(h.entry.open.attributes['aria-expanded'], 'true');
+    assert.deepEqual(h.ids(), ['0', '1', '2', '3', '4']);
+    assert.equal(h.entry.loadMore.hidden, false);
+  }
+});
+
+test('new chats and archives preserve pagination without stale rows', () => {
   const h = fixture();
   h.entry.loadMore.handlers.click();
-  h.collapsedWorkspaces.add('/project');
-  h.render();
-  assert.equal(h.entry.sessionList.hidden, true);
-  h.collapsedWorkspaces.clear();
   h.lists.get('/project').unshift({ id: 'new', title: 'New chat' });
   h.render();
   assert.equal(h.entry.sessionList.hidden, false);

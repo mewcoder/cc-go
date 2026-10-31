@@ -32,33 +32,37 @@ type Config struct {
 }
 
 type Native struct {
-	ShowMenu      func()
-	SetTheme      func(string)
-	CloseWindow   func()
-	OpenURL       func(string) error
-	OpenPath      func(string) error
-	ReadClipboard func() (string, error)
-	Copy          func(string) error
-	SelectFolder  func() (string, error)
-	SelectVSIX    func() (string, error)
-	SelectNode    func() (string, error)
-	Message       func(string, string, []string) (int, error)
+	ShowMenu         func()
+	SetTheme         func(string)
+	CloseWindow      func()
+	OpenURL          func(string) error
+	OpenPath         func(string) error
+	ShowItemInFolder func(string)
+	ReadClipboard    func() (string, error)
+	Copy             func(string) error
+	SelectFolder     func() (string, error)
+	SelectVSIX       func() (string, error)
+	SelectNode       func() (string, error)
+	Message          func(string, string, []string) (int, error)
 }
 
 type DesktopState struct {
-	Workspace        string                       `json:"workspace"`
-	Workspaces       []string                     `json:"workspaces"`
-	WorkspaceUsedAt  map[string]int64             `json:"workspaceUsedAt,omitempty"`
-	Theme            string                       `json:"theme"`
-	Metadata         map[string]sessions.Metadata `json:"metadata"`
-	Archive          string                       `json:"archive,omitempty"`
-	ArchiveSource    string                       `json:"archiveSource,omitempty"`
-	Claude           string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
-	Node             string                       `json:"node,omitempty"`
-	SetupComplete    bool                         `json:"setupComplete,omitempty"`
-	SidebarWidth     int                          `json:"sidebarWidth"`
-	SidebarCollapsed bool                         `json:"sidebarCollapsed"`
-	TranscriptWidth  string                       `json:"transcriptWidth"`
+	Workspace          string                       `json:"workspace"`
+	Workspaces         []string                     `json:"workspaces"`
+	WorkspaceUsedAt    map[string]int64             `json:"workspaceUsedAt,omitempty"`
+	Theme              string                       `json:"theme"`
+	Metadata           map[string]sessions.Metadata `json:"metadata"`
+	Archive            string                       `json:"archive,omitempty"`
+	ArchiveSource      string                       `json:"archiveSource,omitempty"`
+	Claude             string                       `json:"claude,omitempty"` // Legacy state only; never used for runtime discovery.
+	Node               string                       `json:"node,omitempty"`
+	SetupComplete      bool                         `json:"setupComplete,omitempty"`
+	SidebarWidth       int                          `json:"sidebarWidth"`
+	SidebarCollapsed   bool                         `json:"sidebarCollapsed"`
+	SidebarOptions     SidebarOptions               `json:"sidebarOptions"`
+	TranscriptWidth    string                       `json:"transcriptWidth"`
+	InterfaceSize      string                       `json:"interfaceSize"`
+	LegacyChatFontSize int                          `json:"chatFontSize,omitempty"`
 }
 
 type LiveSession struct {
@@ -100,6 +104,7 @@ type App struct {
 	logsOpen        bool
 	settingsOpen    bool
 	pluginSetupOpen bool
+	pluginUpdating  bool
 	windowHidden    bool
 	activeSessionID string
 	setupStatus     string
@@ -120,6 +125,7 @@ type App struct {
 	metrics         map[string]SessionMetrics
 	project         projectCache
 	native          Native
+	nativeViews     bool
 	token           string
 	ShellURL        string
 	ViewURL         string
@@ -198,6 +204,18 @@ func New(cfg Config) (*App, error) {
 	if !validTranscriptWidth(a.state.TranscriptWidth) {
 		a.state.TranscriptWidth = "narrow"
 	}
+	if !a.state.SidebarOptions.valid() {
+		a.state.SidebarOptions = SidebarOptions{Display: "grouped", Sort: "updated"}
+	}
+	if !validInterfaceSize(a.state.InterfaceSize) {
+		a.state.InterfaceSize = "small"
+		if a.state.LegacyChatFontSize > 15 && a.state.LegacyChatFontSize <= 24 {
+			a.state.InterfaceSize = "large"
+		} else if a.state.LegacyChatFontSize > 13 && a.state.LegacyChatFontSize <= 15 {
+			a.state.InterfaceSize = "medium"
+		}
+	}
+	a.state.LegacyChatFontSize = 0
 	if cfg.Node == "" {
 		a.cfg.Node = a.state.Node
 	}
@@ -227,7 +245,10 @@ func New(cfg Config) (*App, error) {
 	if workspaceExists && (a.state.Workspaces == nil || workspace != previousWorkspace) {
 		a.addWorkspaceLocked(workspace)
 	}
-	if a.state.Theme != "light" {
+	if a.state.Theme == "claude-light" || a.state.Theme == "slack-ochin" {
+		a.state.Theme = "light"
+	}
+	if !validTheme(a.state.Theme) {
 		a.state.Theme = "dark"
 	}
 	a.logFile, err = os.OpenFile(filepath.Join(cfg.DataDir, "host.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
@@ -256,7 +277,7 @@ func (a *App) SetNative(native Native) {
 	theme := a.state.Theme
 	a.mu.Unlock()
 	if native.SetTheme != nil {
-		native.SetTheme(theme)
+		native.SetTheme(themeKind(theme))
 	}
 }
 
@@ -295,6 +316,7 @@ func (a *App) Start() error {
 					}
 					return
 				}
+				a.cleanupPluginCache()
 			}
 			if completed && a.cfg.VSIX == "" {
 				go func() { _ = a.checkPluginUpdate(a.ctx) }()
@@ -821,9 +843,9 @@ func (a *App) hostEvent(generation uint64, method string, args json.RawMessage) 
 
 func (a *App) hostCall(ctx context.Context, method string, args json.RawMessage) (any, error) {
 	var v struct {
-		ID, Key, Value, Text, URI, Type, Message string
-		Items                                    []json.RawMessage
-		MessageData                              json.RawMessage `json:"-"`
+		ID, Key, Value, Text, URI, Type, Message, Path string
+		Items                                          []json.RawMessage
+		MessageData                                    json.RawMessage `json:"-"`
 	}
 	_ = json.Unmarshal(args, &v)
 	a.mu.Lock()
@@ -847,6 +869,8 @@ func (a *App) hostCall(ctx context.Context, method string, args json.RawMessage)
 		return true, view.post(payload.Message)
 	case "external.open":
 		return true, openExternal(native, v.URI)
+	case "file.reveal":
+		return nil, revealLocalPath(native, v.Path)
 	case "clipboard.read":
 		if native.ReadClipboard != nil {
 			return native.ReadClipboard()

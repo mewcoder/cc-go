@@ -9,14 +9,19 @@
   const actionListeners = new Set();
   const frames = new Map();
   const composers = new Map();
+  const titlebarDrags = [];
+  let presentedFrame;
+  let viewStatus;
   let latest, timer, stopped = false;
   let refreshStarted = 0, refreshApplied = 0;
   let draftUpdates = Promise.resolve();
+  let sidebarOptionsSave = Promise.resolve();
   const draftSensitiveActions = new Set(['workspace', 'new', 'open-session', 'select-project', 'select-branch', 'retry', 'import', 'update-plugin', 'close']);
   let sidebarWidth = 248, sidebarCollapsed = false;
   let logsPending = false;
   let hud;
   let chooser;
+  let gitReview;
   let projectPending = false, projectWorkspace, projectRevision, projectForce = true;
   let projectFocused = document.hasFocus?.() ?? true;
 
@@ -31,22 +36,42 @@
     if (!workspace || !projectForce && projectWorkspace === workspace && projectRevision === latest.projectRevision) return;
     projectForce = false;
     projectPending = true;
-    projectWorkspace = workspace;
-    projectRevision = latest.projectRevision;
+    const revision = latest.projectRevision;
     try {
       const project = await request('project', { workspace, force: true });
-      if (project && latest?.workspace === workspace && projectVisible() && !projectForce) {
+      if (project && latest?.workspace === workspace && latest.projectRevision === revision
+        && projectVisible() && !projectForce) {
+        projectWorkspace = workspace;
+        projectRevision = revision;
         latest = { ...latest, project };
-        hud?.render(latest);
+        renderHUD(latest);
         for (const callback of stateListeners) callback(latest);
       }
-    } catch (error) { console.error('Git status:', error); }
+    } catch (error) {
+      // Retry on the next explicit event, without polling Git after transport failures.
+      projectWorkspace = workspace;
+      projectRevision = revision;
+      console.error('Git status:', error);
+    }
     finally { projectPending = false; }
   }
 
   function requestGitRefresh() {
     projectForce = true;
     return refreshProject();
+  }
+
+  function renderHUD(state) {
+    const active = state.views?.find(view => view.active);
+    hud?.render({ ...state, contextAvailable: frames.get(active?.id)?.contextReady === true });
+  }
+
+  function openContext() {
+    const active = latest?.views?.find(view => view.active);
+    const frame = frames.get(active?.id);
+    if (frame && !frame.hidden && frame.contextReady) {
+      frame.contentWindow.postMessage({ type: 'claude-host:open-context' }, new URL(frame.dataset.url).origin);
+    }
   }
 
   async function request(method, args) {
@@ -74,7 +99,7 @@
   function layout() {
     if (!latest || !document.body) return;
     const integrated = ['darwin', 'win32'].includes(config.platform);
-    const left = sidebarCollapsed ? integrated ? 0 : 36 : sidebarWidth + 4;
+    const left = sidebarCollapsed ? integrated ? 0 : 36 : sidebarWidth;
     const top = config.platform === 'win32' || config.platform === 'darwin' && sidebarCollapsed ? 30 : 0;
     const bottom = latest.logsOpen ? 256 : 0;
     for (const frame of frames.values()) {
@@ -86,20 +111,53 @@
     const active = latest.views?.find(view => view.active);
     const frame = frames.get(active?.id), composer = composers.get(active?.id);
     const width = Math.max(0, innerWidth - left), height = Math.max(0, innerHeight - top - bottom);
+    if (viewStatus) {
+      const measured = frame?.loadingLayout ?? presentedFrame?.loadingLayout;
+      const bounds = viewStatus.root.dataset.state === 'loading'
+        && measured?.viewport.width === width && measured.viewport.height === height ? measured.rect : null;
+      Object.assign(viewStatus.root.style, {
+        left: left + (bounds?.left ?? 0) + 'px', top: top + (bounds?.top ?? 0) + 'px',
+        width: (bounds?.width ?? width) + 'px', height: (bounds?.height ?? height) + 'px',
+      });
+    }
     const rect = composer?.rect;
     hud?.setDraft(composer?.hasDraft !== false);
     chooser?.sync(latest);
+    gitReview?.sync(latest);
     const fits = rect && composer.viewport.width === width && composer.viewport.height === height
       && rect.left >= 0 && rect.top >= 0 && rect.left + rect.width <= width + 1
       && rect.top + rect.height + window.goHUD.gap + window.goHUD.height <= height + 1;
     hud?.layout(frame && !frame.hidden && fits
       ? { left: left + rect.left, top: top + rect.top + rect.height + window.goHUD.gap, width: rect.width } : null);
+    const regions = window.mygo && integrated && frame && !frame.hidden && !frame.inert && !latest.pluginUpdating
+      && composer?.viewport.width === width && composer.viewport.height === height ? composer.dragRegions : [];
+    while (titlebarDrags.length > regions.length) titlebarDrags.pop().remove();
+    regions.forEach((region, index) => {
+      if (!titlebarDrags[index]) {
+        const drag = document.createElement('div');
+        drag.className = 'go-titlebar-drag';
+        drag.setAttribute('aria-hidden', 'true');
+        document.body.append(drag);
+        titlebarDrags.push(drag);
+      }
+      Object.assign(titlebarDrags[index].style, { left: left + region.left + 'px', top: top + region.top + 'px',
+        width: region.width + 'px', height: region.height + 'px' });
+    });
   }
 
   window.addEventListener('message', event => {
-    if (!['claude-host:composer', 'claude-host:transport'].includes(event.data?.type)) return;
+    if (!['claude-host:composer', 'claude-host:transport', 'claude-host:native-ready', 'claude-host:context-ready'].includes(event.data?.type)) return;
     const entry = [...frames].find(([, frame]) => frame.contentWindow === event.source);
     if (!entry || event.origin !== new URL(entry[1].dataset.url).origin) return;
+    if (event.data.type === 'claude-host:context-ready') {
+      entry[1].contextReady = true;
+      renderHUD(latest);
+      return;
+    }
+    if (event.data.type === 'claude-host:native-ready') {
+      if (window.mygo) window.goViewRelay.attach(entry[1], event);
+      return;
+    }
     if (event.data.type === 'claude-host:transport') {
       const { sequence, connected } = event.data;
       if (!Number.isSafeInteger(sequence) || sequence < 0 || typeof connected !== 'boolean') return;
@@ -113,7 +171,30 @@
     if (rect !== null && (!rect || ![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite)
       || rect.width <= 0 || rect.height <= 0)) return;
     const previous = composers.get(entry[0]);
-    composers.set(entry[0], { rect, viewport, hasDraft });
+    // Only permit native drag surfaces in the plugin's top strip.
+    const dragRegions = event.data.dragRegions;
+    const validDrags = Array.isArray(dragRegions) && dragRegions.length <= 32 && dragRegions.every(region =>
+      region && [region.left, region.top, region.width, region.height].every(Number.isFinite)
+      && region.left >= 0 && region.top >= 0 && region.top <= 1 && region.width >= 4 && region.height > 0 && region.height <= 64
+      && region.left + region.width <= viewport.width && region.top + region.height <= viewport.height);
+    composers.set(entry[0], { rect, viewport, hasDraft, dragRegions: validDrags ? dragRegions : [] });
+    const loadingRect = event.data.loadingRect;
+    if (loadingRect && [loadingRect.left, loadingRect.top, loadingRect.width, loadingRect.height].every(Number.isFinite)
+      && loadingRect.left >= 0 && loadingRect.top >= 0 && loadingRect.width > 0 && loadingRect.height > 0
+      && loadingRect.left + loadingRect.width <= viewport.width + 1 && loadingRect.top + loadingRect.height <= viewport.height + 1) {
+      entry[1].loadingLayout = { rect: loadingRect, viewport };
+    }
+    entry[1].loadingReady = event.data.loading === true;
+    if (event.data.loadError === true) {
+      failView(entry[1]);
+    } else if (rect && !entry[1].loadingReady) {
+      entry[1].contentReady = true;
+      entry[1].loadState = 'ready';
+      clearViewTimers(entry[1]);
+      presentView();
+    } else if (entry[1].loadingReady) {
+      presentView();
+    }
     if (previous?.hasDraft !== hasDraft) {
       void reportDraft(entry[0], hasDraft).catch(error => console.error('Go desktop draft state:', error));
     }
@@ -130,11 +211,105 @@
     frame.contentWindow.postMessage({ type: 'claude-host:transport', keepAlive }, new URL(frame.dataset.url).origin);
   }
 
+  function presentView() {
+    const state = latest;
+    if (state.pluginUpdating) return;
+    const active = state.views.find(view => view.active);
+    const target = frames.get(active?.id);
+    const visible = state.phase === 'active' && !state.settingsOpen && !state.pluginSetupOpen;
+    // Keep the previous pixels until the new composer has laid out. The old
+    // conversation becomes inert immediately, so input cannot reach it.
+    if (!visible || !active || target?.loadState === 'error') presentedFrame = undefined;
+    else if (!presentedFrame || ![...frames.values()].includes(presentedFrame) || target?.contentReady) {
+      presentedFrame = target;
+    }
+    for (const [id, frame] of frames) {
+      frame.hidden = !visible || frame !== presentedFrame;
+      frame.inert = frame.hidden || frame !== target;
+      syncTransport(frame, state.views.find(view => view.id === id));
+    }
+    renderViewStatus(target, visible);
+  }
+
+  function clearViewTimers(frame) {
+    clearTimeout(frame.revealTimer);
+    clearTimeout(frame.loadingTimer);
+  }
+
+  function failView(frame) {
+    clearViewTimers(frame);
+    frame.contentReady = false;
+    frame.loadState = 'error';
+    presentView();
+    layout();
+  }
+
+  function loadView(frame, url, retry = false) {
+    clearViewTimers(frame);
+    window.goViewRelay?.close(frame);
+    const id = [...frames].find(([, candidate]) => candidate === frame)?.[0];
+    composers.delete(id);
+    frame.transport = undefined;
+    frame.transportWanted = undefined;
+    frame.contextReady = false;
+    frame.contentReady = false;
+    frame.loadingReady = false;
+    frame.loadingLayout = undefined;
+    frame.loadState = 'loading';
+    frame.showLoading = retry;
+    frame.dataset.url = url;
+    frame.loadingTimer = setTimeout(() => { frame.showLoading = true; presentView(); layout(); }, 400);
+    frame.revealTimer = setTimeout(() => failView(frame), 15000);
+    frame.src = url + (retry ? '&retry=' + Date.now() : '');
+  }
+
+  function renderViewStatus(target, visible) {
+    const failed = target?.loadState === 'error';
+    const show = visible && target && (failed || target.loadState === 'loading' && target.showLoading);
+    if (!show) { if (viewStatus) viewStatus.root.hidden = true; return; }
+    if (!viewStatus) {
+      const root = document.createElement('section');
+      root.className = 'go-view-status';
+      root.setAttribute('aria-live', 'polite');
+      const content = document.createElement('div');
+      const title = document.createElement('h2'), detail = document.createElement('p');
+      const retry = document.createElement('button'), logs = document.createElement('button');
+      retry.type = logs.type = 'button';
+      retry.textContent = 'Retry';
+      logs.textContent = 'View logs';
+      retry.onclick = () => {
+        const active = latest.views.find(view => view.active);
+        const frame = frames.get(active?.id);
+        if (!frame || composers.get(active.id)?.hasDraft) return;
+        loadView(frame, frame.dataset.url, true);
+        presentView();
+        layout();
+      };
+      logs.onclick = () => { void invoke('ui', { key: 'logs', open: true }).catch(error => console.error('VSIX Output:', error)); };
+      content.append(title, detail, retry, logs);
+      root.append(content);
+      document.body.append(root);
+      viewStatus = { root, title, detail, retry, logs };
+    }
+    viewStatus.root.hidden = false;
+    viewStatus.root.dataset.state = failed ? 'error' : 'loading';
+    viewStatus.root.setAttribute('role', failed ? 'alert' : 'status');
+    viewStatus.title.textContent = failed ? 'Could not load this chat' : 'Loading...';
+    viewStatus.detail.textContent = failed ? 'The chat did not finish loading. Retry, or view the logs for details. Your saved conversation is unchanged.' : '';
+    viewStatus.detail.hidden = viewStatus.retry.hidden = viewStatus.logs.hidden = !failed;
+  }
+
   function mountViews(state) {
     if (!document.body) return;
+    // Retain the current chat while its replacement host is being prepared.
+    if (state.pluginUpdating && frames.size) {
+      for (const frame of frames.values()) frame.inert = true;
+      layout();
+      return;
+    }
     const ids = new Set(state.views.map(view => view.id));
     for (const [id, frame] of frames) {
-      if (!ids.has(id)) { frame.remove(); frames.delete(id); composers.delete(id); }
+      if (!ids.has(id)) { clearViewTimers(frame); window.goViewRelay?.close(frame); frame.remove(); frames.delete(id); composers.delete(id); }
     }
     for (const view of state.views) {
       if (!view.ready) continue;
@@ -147,28 +322,27 @@
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-downloads');
         frame.setAttribute('allow', 'clipboard-read; clipboard-write');
         frame.referrerPolicy = 'no-referrer';
+        frame.hidden = true;
+        frame.addEventListener('error', () => failView(frame));
         frames.set(view.id, frame);
         document.body.append(frame);
       }
       const url = view.url + '?revision=' + view.revision;
       if (frame.dataset.url !== url) {
-        composers.delete(view.id);
-        frame.transport = undefined;
-        frame.transportWanted = undefined;
-        frame.dataset.url = url;
-        frame.src = url;
+        loadView(frame, url);
       }
-      frame.hidden = Boolean(!view.active || state.phase !== 'active' || state.settingsOpen || state.pluginSetupOpen);
-      syncTransport(frame, view);
     }
+    presentView();
     if (!chooser && window.goSelection) chooser = window.goSelection.create(document, { request, invoke, formatPath });
+    if (!gitReview && window.goGitReview) gitReview = window.goGitReview.create(document, { request });
     if (!hud && window.goHUD) hud = window.goHUD.create(document, chooser ? {
       formatPath,
       project: field => chooser.open('project', latest, field),
       branch: field => chooser.open('branch', latest, field),
-      changes: requestGitRefresh,
-    } : { changes: requestGitRefresh, formatPath });
-    hud?.render(state);
+      changes: field => gitReview?.open(latest, field),
+      context: openContext,
+    } : { changes: field => gitReview?.open(latest, field), context: openContext, formatPath });
+    renderHUD(state);
     layout();
   }
 
@@ -179,7 +353,20 @@
     if (sequence < refreshApplied) return latest;
     refreshApplied = sequence;
     if (latest?.windowVisible === false && state.windowVisible !== false) projectForce = true;
+    if (latest?.project && latest.workspace === state.workspace && latest.project.path === state.workspace
+      && latest.project.gitStatus !== 'unknown' && latest.project.gitStatus
+      && state.project?.gitStatus === 'unknown') {
+      state.project = latest.project;
+    }
+    if (latest?.pluginUpdating && state.phase === 'active' && state.viewLoading) state.pluginUpdating = true;
     latest = state;
+    const fontSize = { small: 12, medium: 14, large: 16 }[state.interfaceSize] ?? 12;
+    const iconSize = { small: 14, medium: 15, large: 16 }[state.interfaceSize] ?? 14;
+    document.documentElement.style.setProperty('--host-font-scale', String(fontSize / 13));
+    document.documentElement.style.setProperty('--shell-sidebar-icon-size', `${iconSize}px`);
+    for (const variable of ['--vscode-chat-font-size', '--vscode-font-size', '--vscode-editor-font-size']) {
+      document.documentElement.style.setProperty(variable, `${fontSize}px`);
+    }
     sidebarWidth = state.sidebarWidth;
     sidebarCollapsed = state.sidebarCollapsed;
     mountViews(state);
@@ -244,6 +431,14 @@
     closeSettings: () => invoke('ui', { key: 'settings', open: false }),
     updateSetting: (key, value) => request('settings-update', { key, value }),
     setTranscriptWidth: value => invoke('ui', { key: 'transcript-width', value }),
+    setInterfaceSize: value => invoke('ui', { key: 'interface-size', value }),
+    setSidebarOptions: patch => {
+      const save = sidebarOptionsSave.catch(() => {}).then(() => invoke('ui', {
+        key: 'sidebar-options', value: { display: 'grouped', sort: 'updated', ...latest?.sidebarOptions, ...patch },
+      }));
+      sidebarOptionsSave = save;
+      return save;
+    },
     setTheme: theme => invoke('theme', { theme }),
     setSidebar: options => {
       if (options.width !== undefined) sidebarWidth = options.width;

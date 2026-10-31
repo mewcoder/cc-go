@@ -48,18 +48,24 @@ func Discover(projects string) ([]Project, error) {
 			return transcripts[i].ModTime().After(transcripts[j].ModTime())
 		})
 		for _, transcript := range transcripts {
-			path := projectPath(filepath.Join(projects, directory.Name(), transcript.Name()), directory.Name())
+			filename := filepath.Join(projects, directory.Name(), transcript.Name())
+			if !visibleTranscript(filename) {
+				continue
+			}
+			path := projectPath(filename, directory.Name())
 			if path == "" {
 				continue
 			}
-			updatedAt := transcript.ModTime().UnixMilli()
+			updatedAt := readUpdatedAt(filename)
+			if updatedAt == 0 {
+				updatedAt = transcript.ModTime().UnixMilli()
+			}
 			if index, ok := seen[path]; ok {
 				result[index].UpdatedAt = max(result[index].UpdatedAt, updatedAt)
 			} else {
 				seen[path] = len(result)
 				result = append(result, Project{Path: path, UpdatedAt: updatedAt})
 			}
-			break
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {

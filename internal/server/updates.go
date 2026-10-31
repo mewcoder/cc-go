@@ -46,13 +46,24 @@ func (a *App) updatePlugin(ctx context.Context) error {
 	}
 	previousPhase, previousStatus, previousLabel := a.phase, a.setupStatus, a.label
 	previousStep := a.setupStep
-	a.phase, a.stopping, a.pluginSetupOpen = "preparing", true, true
+	previousPrepared, previousRuntime, previousVersion := a.prepared, a.runtimePath, a.version
+	previousArchive, previousSource := a.state.Archive, a.state.ArchiveSource
+	autoApply := a.state.SetupComplete
+	background := previousPhase == "active" && !a.pluginSetupOpen
+	a.pluginUpdating = background
+	a.phase, a.stopping = "preparing", true
 	a.errorText = ""
 	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.pluginUpdating = false
+		a.mu.Unlock()
+	}()
 	restore := func(err error) error {
 		a.mu.Lock()
 		a.phase, a.setupStatus, a.label, a.stopping = previousPhase, previousStatus, previousLabel, false
 		a.setupStep = previousStep
+		a.pluginSetupOpen = !background
 		a.updateError = err.Error()
 		if errors.Is(err, errDownloadCancelled) {
 			a.setupStatus, a.updateError = "cancelled", ""
@@ -78,12 +89,57 @@ func (a *App) updatePlugin(ctx context.Context) error {
 		return restore(err)
 	}
 	a.stopHost()
-	if err := a.prepare(ctx, archive); err != nil {
-		a.fail(err)
+	// Keep the last usable installation until its replacement has activated.
+	rollback := func(err error) error {
+		a.stopHost()
+		a.mu.Lock()
+		a.prepared, a.runtimePath, a.version = previousPrepared, previousRuntime, previousVersion
+		a.state.Archive, a.state.ArchiveSource = previousArchive, previousSource
+		a.phase, a.setupStatus, a.label, a.stopping = previousPhase, previousStatus, previousLabel, false
+		a.setupStep, a.errorText = previousStep, ""
+		saveErr := a.saveLocked()
+		a.mu.Unlock()
+		var restartErr error
+		if previousPhase == "active" {
+			restartErr = a.activateChosenWorkspace(a.ctx)
+			if restartErr != nil {
+				a.fail(restartErr)
+			}
+		}
+		err = errors.Join(err, saveErr, restartErr)
+		a.mu.Lock()
+		a.updateError = err.Error()
+		a.pluginSetupOpen = !background || a.phase != "active" || a.setupSaveError != ""
+		a.mu.Unlock()
 		return err
+	}
+	if err := a.prepare(ctx, archive); err != nil {
+		return rollback(err)
+	}
+	if autoApply {
+		if err := a.activateChosenWorkspace(ctx); err != nil {
+			return rollback(err)
+		}
 	}
 	a.mu.Lock()
 	a.latestVersion, a.updateError = a.version, ""
 	a.mu.Unlock()
+	if autoApply {
+		a.cleanupPluginCache()
+	}
 	return nil
+}
+
+func (a *App) cleanupPluginCache() {
+	a.mu.Lock()
+	if a.phase != "active" || a.prepared == nil || a.setupSaveError != "" || a.cfg.VSIX != "" {
+		a.mu.Unlock()
+		return
+	}
+	archive, extensionPath := a.state.Archive, a.prepared.ExtensionPath
+	a.mu.Unlock()
+	if err := plugin.CleanupCache(a.cfg.DataDir, archive, extensionPath); err != nil {
+		// Cleanup failure must not take a successfully updated host offline.
+		a.Log("warning", "Could not clean old plugin caches: "+err.Error())
+	}
 }

@@ -4,5 +4,5 @@ import "embed"
 
 //go:generate node ../scripts/vendor-runtime.cjs
 
-//go:embed *.cjs *.css deps
+//go:embed *.cjs *.css deps code-themes
 var Files embed.FS

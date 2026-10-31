@@ -19,6 +19,7 @@ function fixture(collapsed = false) {
   const saved = [];
   const context = { document: { createElement: make }, workspaceElements, collapsedWorkspaces,
     icon: name => ({ name }), saveCollapsed: () => saved.push([...collapsedWorkspaces]),
+    render() {},
     runCommand() { throw new Error('Collapsing must not start or switch conversations'); }, desktop: {} };
   const start = source.indexOf('  function createWorkspaceNode(path) {');
   const end = source.indexOf('\n  function createSessionRow', start);
@@ -29,6 +30,7 @@ function fixture(collapsed = false) {
 
 test('workspace collapse toggles only sessions, preserves New Chat and saves state', () => {
   const { entry, saved, collapsedWorkspaces } = fixture();
+  assert.equal(entry.folderIcon.className, 'workspace-folder-icon');
   entry.open.handlers.click();
   assert.equal(entry.sessionList.hidden, true);
   assert.equal(entry.open.attributes['aria-expanded'], 'false');
@@ -56,15 +58,20 @@ test('workspace restores its saved collapsed icon and expands on click', () => {
   assert.match(source, /localStorage\.setItem\('collapsedWorkspaces', JSON\.stringify\(\[\.\.\.collapsedWorkspaces\]\)\)/);
 });
 
-test('overall Workspace stays a static heading and does not hide the list', () => {
+test('Project heading keeps its list visible until the archive view is opened', () => {
   const html = fs.readFileSync(path.join(__dirname, '../web/shell.html'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
   const bridge = fs.readFileSync(path.join(__dirname, '../web/desktop.js'), 'utf8');
-  assert.match(html, /<h2>Workspace<\/h2>/);
+  assert.match(html, /<h2>Project<\/h2>/);
+  assert.match(html, /<aside class="sidebar" aria-label="Project">/);
+  assert.match(html, /title="Add Project" aria-label="Add Project"/);
+  assert.match(html, /id="workspace-list" class="workspace-list" aria-label="Project list"/);
+  assert.match(source, /Start a new chat in an available project/);
   assert.doesNotMatch(html, /id="workspace-list"[^>]*hidden/);
-  assert.doesNotMatch(source, /toggleWorkspaces|workspaceListCollapsed|workspaceList\.hidden/);
+  assert.doesNotMatch(source, /toggleWorkspaces|workspaceListCollapsed/);
+  assert.match(source, /ui\.workspaceList\.hidden = archiveExpanded/);
   assert.doesNotMatch(bridge, /setWorkspaceListCollapsed/);
   assert.doesNotMatch(css, /toggle-workspaces|\.workspace-open::after/);
   assert.match(css, /sidebar-header \{ flex-basis: 36px;/);
-  assert.match(css, /sidebar-header h2 \{ font-size: 11px;/);
+  assert.match(css, /sidebar-header h2 \{ font-size: var\(--vscode-chat-font-size, 12px\);/);
 });

@@ -35,10 +35,11 @@ test('sidebar uses the same font family and 13px base as the plugin host', () =>
 });
 
 test('sidebar weights follow the plugin while auxiliary labels remain readable', () => {
-  assert.equal(property(rule('.sidebar .sidebar-new-chat'), 'font-weight'), '500');
-  assert.equal(property(rule('.sidebar .session-row.active .session-title'), 'font-weight'), '600');
+  assert.equal(property(rule('.sidebar .sidebar-new-chat'), 'font-size'), 'calc(var(--vscode-chat-font-size, 14px) - 1px)');
+  assert.equal(property(rule('.sidebar .sidebar-new-chat'), 'font-weight'), '400');
+  assert.equal(property(rule('.sidebar .session-row.active .session-title'), 'font-weight'), '400');
   const metadata = rule('.sidebar :is(.session-time, .session-empty, .session-load-more)');
-  assert.equal(property(metadata, 'font-size'), '12px');
+  assert.equal(property(metadata, 'font-size'), 'calc(var(--vscode-chat-font-size, 12px) - 1px)');
   assert.equal(property(metadata, 'font-weight'), '400');
   assert.match(host, /body\[data-theme\] \.sidebar \.session-row:is\(\.active, :hover, :focus-within\) \.session-time,/);
   assert.equal(property(rule('body[data-theme] .sidebar .session-row:is(.active, :hover, :focus-within) .session-time,\nbody[data-theme] .sidebar .session-load-more:is(:hover, :focus-visible)'), 'color'), 'var(--vscode-foreground)');
@@ -46,7 +47,10 @@ test('sidebar weights follow the plugin while auxiliary labels remain readable',
 
 test('typography keeps the agreed heading, New Chat height and icon sizing', () => {
   assert.equal(property(rule(':root .sidebar-header'), 'flex-basis'), '36px');
-  assert.equal(property(rule('.sidebar-header h2'), 'font-size'), '11px');
+  assert.equal(property(rule('.sidebar-header h2'), 'font-size'), 'var(--vscode-chat-font-size, 12px)');
+  assert.equal(property(rule('.sidebar-header h2'), 'font-weight'), '400');
+  assert.equal(property(rule('.sidebar-header h2'), 'letter-spacing'), 'normal');
+  assert.equal(property(rule('.sidebar-header h2'), 'text-transform'), 'none');
   assert.equal(property(rule('.sidebar-new-chat'), 'min-height'), '28px');
   assert.equal(property(rule('.sidebar .session-item'), 'min-height'), '28px');
   assert.equal(property(rule('.sidebar .session-rename'), 'height'), '28px');
@@ -56,11 +60,40 @@ test('typography keeps the agreed heading, New Chat height and icon sizing', () 
   assert.doesNotMatch(host, /(?:^|\n)body\s*\{[^}]*font-size:/);
 });
 
+test('footer version text matches the body font size', () => {
+  assert.equal(property(rule('.sidebar-footer .connection-status'), 'font-size'), 'var(--vscode-chat-font-size, 12px)');
+});
+
+test('project-to-chat and adjacent chat rows have 2px gaps without changing row height', () => {
+  assert.equal(property(rule('.sidebar .session-list'), 'padding-top'), '2px');
+  assert.equal(property(rule('.sidebar .session-row + .session-row'), 'margin-top'), '2px');
+  assert.equal(property(rule('.sidebar .session-item'), 'min-height'), '28px');
+});
+
 test('chat timestamps leave the layout whenever hover or keyboard focus reveals row actions', () => {
   assert.equal(property(rule('.sidebar .session-row:hover .session-time,\n.sidebar .session-row:has(:focus-visible) .session-time'), 'display'), 'none');
   assert.match(shell, /\.session-row:hover \.session-action, \.session-row:has\(:focus-visible\) \.session-action \{ opacity: 1; pointer-events: auto; \}/);
   assert.match(shell, /\.session-row:hover \.session-item, \.session-row:has\(:focus-visible\) \.session-item \{ padding-right: 52px; \}/);
   assert.doesNotMatch(host, /(?:^|\n)\.session-time\s*\{[^}]*display:\s*none/);
+});
+
+test('project hover uses the neutral row background instead of the generic button tint', () => {
+  assert.equal(property(rule('.sidebar .workspace-open:hover:not(:disabled)'), 'background'), 'transparent');
+  assert.match(shell, /\.workspace-row:hover \{ background: var\(--shell-hover-background\); \}/);
+});
+
+test('selected project uses an accent folder icon and only shows a background on hover', () => {
+  assert.equal(property(rule('.sidebar .workspace-row.active'), 'background'), 'transparent');
+  assert.equal(property(rule('.sidebar .workspace-row.active:hover'), 'background'), 'var(--shell-hover-background)');
+  assert.equal(property(rule('.sidebar .workspace-row.active .workspace-folder-icon'), 'color'), 'var(--shell-accent)');
+});
+
+test('selected chat rows keep their background without bold text', () => {
+  assert.equal(property(rule('.sidebar .session-row.active'), 'background'), 'var(--shell-row-selected-background)');
+  assert.equal(property(rule('.sidebar .session-row.active .session-title'), 'font-weight'), '400');
+  const dark = rules.find(item => item[1].trim() === ':root' && item[2].includes('--shell-row-selected-background'))[2];
+  assert.equal(property(dark, '--shell-row-selected-background'), '#ffffff1c');
+  assert.equal(property(rule('body[data-theme="light"]'), '--shell-row-selected-background'), '#00000012');
 });
 
 function rgb(hex) {
@@ -85,7 +118,7 @@ test('light sidebar tokens match the plugin and small text meets 4.5:1 in both t
     assert.equal(property(light, name), property(read('runtime/theme-light.css'), name).toLowerCase());
   }
   assert.match(rule('body[data-theme] .sidebar :is(.session-time, .session-empty, .session-load-more, .sidebar-header h2)'), /color: var\(--vscode-descriptionForeground\)/);
-  assert.match(rule('body[data-theme] .sidebar :is(.workspace-open, .session-item, .archive-toggle),\nbody[data-theme] .sidebar .session-item:hover:not(:disabled),\nbody[data-theme] .sidebar .session-row.active .session-item'), /color: var\(--vscode-foreground\)/);
+  assert.match(rule('body[data-theme] .sidebar :is(.workspace-open, .session-item),\nbody[data-theme] .sidebar .session-item:hover:not(:disabled),\nbody[data-theme] .sidebar .session-row.active .session-item'), /color: var\(--vscode-foreground\)/);
   for (const theme of ['dark', 'light']) {
     const colors = theme === 'light' ? light : read('runtime/theme.css');
     const backgrounds = theme === 'light' ? shell.slice(shell.indexOf('body[data-theme="light"] {')) : shell;
@@ -94,11 +127,10 @@ test('light sidebar tokens match the plugin and small text meets 4.5:1 in both t
     const secondary = rgb(property(colors, '--vscode-descriptionForeground'));
     assert.ok(contrast(secondary, background) >= 4.5, `${theme} normal metadata contrast`);
     const hover = property(backgrounds, '--shell-hover-background');
-    const selected = property(backgrounds, '--shell-selected-background');
+    const selection = theme === 'light' ? rule('body[data-theme="light"]') : rules.find(item => item[1].trim() === ':root' && item[2].includes('--shell-row-selected-background'))[2];
+    const selected = property(selection, '--shell-row-selected-background');
     for (const surface of [background, overlay(background, hover), overlay(background, selected), overlay(overlay(background, selected), hover)]) {
       assert.ok(contrast(foreground, surface) >= 4.5, `${theme} primary/interactive text contrast`);
     }
-    const archive = rgb(property(theme === 'light' ? rule('body[data-theme="light"]') : rules.find(item => item[1].trim() === ':root' && item[2].includes('--shell-archive-background'))[2], '--shell-archive-background'));
-    assert.ok(contrast(foreground, archive) >= 4.5, `${theme} Archive text contrast`);
   }
 });
