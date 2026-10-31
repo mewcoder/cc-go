@@ -22,7 +22,9 @@ test('revealFileInOS forwards local paths intact and propagates native errors', 
   const { commands, Uri } = host.vscode;
   const memory = path.join(os.tmpdir(), 'project with spaces;literal', 'memory', 'MEMORY #1%.md');
   await commands.executeCommand('revealFileInOS', Uri.file(memory));
-  assert.deepEqual(calls, [{ method: 'file.reveal', args: { path: memory } }]);
+  // VS Code file URIs normalize Windows drive letters to lowercase.
+  const expectedPath = process.platform === 'win32' ? memory.replace(/^[A-Z]:/, drive => drive.toLowerCase()) : memory;
+  assert.deepEqual(calls, [{ method: 'file.reveal', args: { path: expectedPath } }]);
   for (const uri of [undefined, Uri.parse('https://example.com/memory'), Uri.parse('file://remote/share/memory')]) {
     await assert.rejects(commands.executeCommand('revealFileInOS', uri), /local file URI/);
   }
