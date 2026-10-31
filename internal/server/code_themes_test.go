@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,7 +112,9 @@ func TestCodeThemeAdapterPatchesOnlyRecognizedBundle(t *testing.T) {
 	view.Roots = []string{root}
 	a.views[view.ID] = view
 	w := httptest.NewRecorder()
-	a.ViewHandler().ServeHTTP(w, httptest.NewRequest("GET", a.ViewURL+"/resource/chat/test"+file, nil))
+	resourcePath := "/resource/chat/test/" + strings.TrimPrefix(filepath.ToSlash(file), "/")
+	resourceURL := a.ViewURL + (&url.URL{Path: resourcePath}).EscapedPath()
+	a.ViewHandler().ServeHTTP(w, httptest.NewRequest("GET", resourceURL, nil))
 	if w.Code != 200 || w.Body.String() != patched {
 		t.Fatalf("bundle adaptation not served: %d", w.Code)
 	}
