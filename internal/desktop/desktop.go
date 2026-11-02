@@ -15,6 +15,11 @@ import (
 	"github.com/egoist/mygo/transfer"
 )
 
+func AcquireSingleInstanceLock() bool {
+	mygo.App.SetName("CC Go")
+	return mygo.App.RequestSingleInstanceLock()
+}
+
 func Run(backend *server.App) error {
 	backend.EnableNativeViews()
 	mygo.Bind(&ViewBridge{backend: backend})
@@ -24,6 +29,7 @@ func Run(backend *server.App) error {
 	var startupErr error
 	app.WhenReady(func() {
 		window := mygo.NewWindow(windowOptions(backend.ShellURL, runtime.GOOS))
+		app.OnSecondInstance(func([]string, string) { showMainWindow(window) })
 		if err := window.SetIcon(assets.Icon); err != nil {
 			log.Printf("Window icon: %v", err)
 		}

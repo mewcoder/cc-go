@@ -30,6 +30,10 @@ func main() {
 	flag.StringVar(&cfg.DevAssets, "dev-assets", "", "Development only: read web assets from this directory on refresh")
 	flag.BoolVar(&web, "web", false, "Serve to a local browser instead of opening a native window")
 	flag.Parse()
+	// A duplicate launch must exit before opening shared state or truncating logs.
+	if !web && !desktop.AcquireSingleInstanceLock() {
+		return
+	}
 	// Finder launches have a small PATH, unlike an interactive developer shell.
 	path := os.Getenv("PATH")
 	for _, directory := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
