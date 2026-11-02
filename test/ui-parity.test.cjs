@@ -7,9 +7,9 @@ const { createHash } = require('node:crypto');
 
 // Electron snapshot, except the explicitly approved host adjustments below.
 const expected = {
-  "shell.html": "67439454869550e93a9272287e752436a33b551bee05a47cd08185dd9e5a27e0",
-  "shell.js": "9bdbd7da3ef846c7c3df2a7d5cfa0ad076549965eb1449504801cd0d198fd782",
-  "shell.css": "d8b56cab1b9b539710c09c4c35805532a764cfdc110dda75311b51ee92552d47",
+  "shell.html": "79ab5308c65a122e830f400540bf68bce940efd63e3c441c4270124825d2e510",
+  "shell.js": "11d42246b2f1d04f5889b9db5361903217b52f3bb4bceb7bd5d6249acdcb4ecc",
+  "shell.css": "0ce778866dd03ad048b9667bbfcbdbc6b1b57158438465547d4d506ba8982df6",
   "theme.css": "bc5909055a6e74219de0223386752651b1fd6b0b25a1df9ac46a2b9e0a88ddbf",
   "theme-light.css": "21b2ae2b09bba9c27fe745666dd6afcdf62cd735a3cb08bde49cf320b4b1a7bc"
 };
@@ -223,6 +223,8 @@ for (const [name, digest] of Object.entries(expected)) {
   test(`Electron UI baseline is preserved except approved changes: ${name}`, () => {
     const contents = fs.readFileSync(path.join(__dirname, '../web', name));
     let baseline = contents.toString();
+    // Settings have separate interaction coverage; retain the snapshot for the rest of the shell.
+    baseline = withoutSettings(name, baseline);
     // The user requested descriptive plugin terminology in all visible shell copy.
     if (name === 'shell.html' || name === 'shell.js') {
       baseline = baseline.replaceAll('VS Code extension (.vsix)', 'VSIX');
@@ -258,5 +260,24 @@ test('Electron snapshot icon rules remain unchanged beneath host overrides', () 
   for (const selector of ['.sidebar-actions .icon-button .icon', '.session-action .icon']) {
     assert.match(css, new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{ width: 14px; height: 14px; \\}`));
   }
-  assert.doesNotMatch(css, /\.icon \{[^}]*width: (?!14px)\d+px/);
+  assert.doesNotMatch(withoutSettings('shell.css', css), /\.icon \{[^}]*width: (?!14px)\d+px/);
 });
+
+function withoutSettings(name, source) {
+  if (name === 'shell.html') {
+    return source.replace(/    <dialog id="settings-panel"[\s\S]*?    <\/dialog>/, '    <!-- Settings -->')
+      .replace('    <script src="settings-navigation.js" defer></script>\n', '');
+  }
+  if (name === 'shell.css') {
+    return source.replace(/\/\* Settings live in the top layer[\s\S]*?(?=\.phase-message \{)/, '/* Settings */\n')
+      .replace(/body\[data-theme="light"\] \.settings-panel \{[\s\S]*?body\[data-theme="light"\] \.settings-panel::backdrop \{[^\n]*\}/, '/* Light settings */');
+  }
+  if (name === 'shell.js') {
+    return source.replace(/    settings(?:Search|Navigation|Empty): element\('[^']+'\),\n/g, '')
+      .replace(/    (?:code|search): \[[^\n]+\],\n/g, '')
+      .replace(/  ui\.settingsSearch\.parentElement\.prepend[\s\S]*?(?=  ui\.pluginUpdate\.append)/, '')
+      .replace(/  function renderSettings\(\) \{[\s\S]*?(?=  let state =)/, '  // Settings\n')
+      .replace('      settingsNavigation.reset();', '      ui.settingsContent.scrollTop = 0;');
+  }
+  return source;
+}

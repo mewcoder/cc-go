@@ -22,6 +22,7 @@
   let hud;
   let chooser;
   let gitReview;
+  let notifications;
   let projectPending = false, projectWorkspace, projectRevision, projectForce = true;
   let projectFocused = document.hasFocus?.() ?? true;
 
@@ -301,6 +302,8 @@
 
   function mountViews(state) {
     if (!document.body) return;
+    if (!notifications && window.goNotifications) notifications = window.goNotifications.create(document, { request });
+    notifications?.render(state.notifications || []);
     // Retain the current chat while its replacement host is being prepared.
     if (state.pluginUpdating && frames.size) {
       for (const frame of frames.values()) frame.inert = true;
@@ -462,11 +465,15 @@
   window.addEventListener('resize', layout);
   const foreground = () => {
     projectFocused = document.hasFocus?.() ?? true;
+    if (!config.native) void request('window-focus', { focused: projectFocused && !document.hidden }).catch(error => console.error('Window focus:', error));
     projectForce = true;
     if (!document.hidden) void refresh().catch(error => console.error('Foreground refresh:', error));
   };
   window.addEventListener('focus', foreground);
-  window.addEventListener('blur', () => { projectFocused = false; });
+  window.addEventListener('blur', () => {
+    projectFocused = false;
+    if (!config.native) void request('window-focus', { focused: false }).catch(error => console.error('Window focus:', error));
+  });
   window.addEventListener('pageshow', foreground);
   document.addEventListener?.('visibilitychange', foreground);
   window.addEventListener('beforeunload', () => { stopped = true; clearTimeout(timer); });

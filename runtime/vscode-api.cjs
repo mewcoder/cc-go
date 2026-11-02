@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const picomatch = require('picomatch');
 const types = require('./vscode-types.cjs');
 const { JsonStore } = require('./host-storage.cjs');
@@ -59,6 +60,7 @@ async function createVscodeApi(options, peer) {
   const viewProviders = new Map();
   const serializers = new Map();
   const panels = new Map();
+  const messageSource = new AsyncLocalStorage();
   const contexts = new Map();
   const uriHandlers = new Set();
   const environment = new Map();
@@ -67,6 +69,13 @@ async function createVscodeApi(options, peer) {
   const unsupported = name => { throw new Error(`Unsupported VS Code host capability: ${name}`); };
   const log = (level, text) => peer.notify('host.log', { level, text });
   const configValue = key => workspaceSettings.get(key, globalSettings.get(key, defaults[key]));
+
+  async function showMessage(type, message, args) {
+    const items = [...args];
+    const options = items[0] && typeof items[0] === 'object' && !('title' in items[0]) ? items.shift() : {};
+    const index = await peer.call('dialog.message', { type, message, options, items, viewId: messageSource.getStore() });
+    return Number.isInteger(index) && index >= 0 ? items[index] : undefined;
+  }
 
   function getConfiguration(section = '') {
     const keyFor = key => section ? `${section}.${key}` : key;
@@ -204,7 +213,14 @@ async function createVscodeApi(options, peer) {
         onDidReceiveMessage: received.event,
         postMessage(message) { return peer.call('webview.post', { id, message }); },
       },
-      receive(message) { received.fire(message); },
+      receive(message) {
+        // A selected panel can still be behind another app or in a hidden window.
+        if (message?.type === 'request' && message.request?.type === 'show_notification'
+          && message.request.onlyIfNotVisible && !window.state.focused) {
+          message = { ...message, request: { ...message.request, onlyIfNotVisible: false } };
+        }
+        messageSource.run(id, () => received.fire(message));
+      },
     };
     panel.tab = { id, label: title, input: new types.TabInputWebview(viewType), isActive: false, isDirty: false, isPinned: true, isPreview: false, group };
     panels.set(id, panel);
@@ -308,7 +324,7 @@ async function createVscodeApi(options, peer) {
 
   const window = {
     activeTextEditor: undefined, activeNotebookEditor: undefined, visibleTextEditors: [],
-    activeTerminal: undefined, terminals: [], state: { focused: true, active: true }, activeColorTheme: { kind: 2 },
+    activeTerminal: undefined, terminals: [], state: { focused: options.windowFocused !== false, active: options.windowFocused !== false }, activeColorTheme: { kind: 2 },
     onDidChangeActiveTextEditor: activeEditorChanged.event, onDidChangeVisibleTextEditors: visibleEditorsChanged.event,
     onDidChangeTextEditorSelection: selectionChanged.event, onDidChangeWindowState: windowStateChanged.event,
     onDidChangeActiveColorTheme: themeChanged.event,
@@ -340,9 +356,9 @@ async function createVscodeApi(options, peer) {
       return item;
     },
     setStatusBarMessage(message) { peer.notify('host.status', { message }); return new Disposable(() => peer.notify('host.status', { message: '' })); },
-    async showInformationMessage(message, ...items) { return peer.call('dialog.message', { type: 'info', message, items }); },
-    async showWarningMessage(message, ...items) { return peer.call('dialog.message', { type: 'warning', message, items }); },
-    async showErrorMessage(message, ...items) { return peer.call('dialog.message', { type: 'error', message, items }); },
+    showInformationMessage(message, ...items) { return showMessage('info', message, items); },
+    showWarningMessage(message, ...items) { return showMessage('warning', message, items); },
+    showErrorMessage(message, ...items) { return showMessage('error', message, items); },
     showInputBox() { return unsupported('window.showInputBox'); },
     showQuickPick() { return unsupported('window.showQuickPick'); },
     showTextDocument() { return unsupported('window.showTextDocument'); },

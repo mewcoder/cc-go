@@ -10,6 +10,42 @@ function validateTag(tag, version) {
   }
 }
 
+function changelogNotes(root, version) {
+  const file = path.join(root, 'CHANGELOG.md');
+  if (!fs.existsSync(file)) throw new Error('Missing CHANGELOG.md; add release notes before publishing.');
+  const lines = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const sections = [];
+  let section, fence;
+  for (const line of lines) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && !fence) fence = marker;
+    else if (fence && new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`).test(line)) fence = undefined;
+    else if (!fence && /^## /.test(line)) {
+      section = { heading: line.trim(), lines: [] };
+      sections.push(section);
+      continue;
+    }
+    if (section) section.lines.push(line);
+  }
+  const matches = sections.filter(item => item.heading === `## [${version}]` || item.heading.startsWith(`## [${version}] - `));
+  if (matches.length !== 1) throw new Error(`CHANGELOG.md must contain exactly one section for [${version}]; found ${matches.length}.`);
+  const selected = matches[0];
+  const date = /^## \[[^\]]+\] - (\d{4}-\d{2}-\d{2})$/.exec(selected.heading)?.[1];
+  if (!date || new Date(date + 'T00:00:00Z').toJSON()?.slice(0, 10) !== date) {
+    throw new Error(`CHANGELOG.md [${version}] needs a valid YYYY-MM-DD release date.`);
+  }
+  const notes = selected.lines.join('\n').trim();
+  if (!notes.replace(/<!--[\s\S]*?-->/g, '').replace(/^#{3,6}\s.*$/gm, '').trim()) {
+    throw new Error(`CHANGELOG.md [${version}] has no release notes.`);
+  }
+  return notes;
+}
+
+function releaseBody(root, version) {
+  return changelogNotes(root, version) + '\n\n---\n\n' +
+    '支持 macOS Apple Silicon（DMG）和 Windows x64（EXE）。需要本机 Node.js 22+；首次启动优先复用 VS Code 已安装的稳定版 Claude 插件，没有可用插件时自动下载，使用插件内置 Claude。\n\n当前为测试阶段：Mac 仅临时签名、未公证，Windows 未做发行者代码签名。下载后可用 SHA256SUMS 校验。';
+}
+
 function expectedAssets(version) {
   return [`cc-go-${version}-darwin-arm64.dmg`, `cc-go-${version}-windows-amd64.exe`];
 }
@@ -41,6 +77,7 @@ async function publishRelease({ github, context, root = path.resolve(__dirname, 
   const tag = context.ref.slice('refs/tags/'.length);
   const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   validateTag(tag, version);
+  const body = releaseBody(root, version);
   const directory = path.join(root, 'release');
   const files = await verifyAssets(directory, version);
   const repo = context.repo;
@@ -60,8 +97,7 @@ async function publishRelease({ github, context, root = path.resolve(__dirname, 
   const prerelease = version.includes('-');
   if (!release) {
     release = (await github.rest.repos.createRelease({ ...repo, tag_name: tag, target_commitish: context.sha,
-      name: `CC Go ${tag}`, draft: true, prerelease, generate_release_notes: true,
-      body: '支持 macOS Apple Silicon（DMG）和 Windows x64（EXE）。需要本机 Node.js 22+；首次启动优先复用 VS Code 已安装的稳定版 Claude 插件，没有可用插件时自动下载，使用插件内置 Claude。\n\n当前为测试阶段：Mac 仅临时签名、未公证，Windows 未做发行者代码签名。下载后可用 SHA256SUMS 校验。' })).data;
+      name: `CC Go ${tag}`, draft: true, prerelease, body })).data;
   }
   const release_id = release.id;
   // A failed run leaves a draft. A retry replaces only that draft's assets;
@@ -73,17 +109,22 @@ async function publishRelease({ github, context, root = path.resolve(__dirname, 
     await github.rest.repos.uploadReleaseAsset({ ...repo, release_id, name, data,
       headers: { 'content-type': 'application/octet-stream', 'content-length': String(data.length) } });
   }
-  await github.rest.repos.updateRelease({ ...repo, release_id, draft: false, prerelease,
+  await github.rest.repos.updateRelease({ ...repo, release_id, body, draft: false, prerelease,
     make_latest: prerelease ? 'false' : 'legacy' });
 }
 
-module.exports = { validateTag, expectedAssets, verifyAssets, publishRelease };
+module.exports = { validateTag, changelogNotes, releaseBody, expectedAssets, verifyAssets, publishRelease };
 if (require.main === module) {
   try {
-    if (process.argv[2] !== 'validate-tag') throw new Error('Usage: node scripts/release.cjs validate-tag');
+    const command = process.argv[2], root = path.resolve(__dirname, '..');
+    if (!['validate-tag', 'check', 'notes'].includes(command)) throw new Error('Usage: node scripts/release.cjs validate-tag|check|notes');
     const { version } = require('../package.json');
-    if (process.env.RELEASE_TAG) validateTag(process.env.RELEASE_TAG, version);
-    console.log(process.env.RELEASE_TAG ? `Validated ${process.env.RELEASE_TAG}` : 'Build only: no release tag.');
+    if (command === 'notes') console.log(releaseBody(root, version));
+    else if (command === 'check' || process.env.RELEASE_TAG) {
+      validateTag(process.env.RELEASE_TAG || `v${version}`, version);
+      changelogNotes(root, version);
+      console.log(`Validated v${version} and CHANGELOG.md.`);
+    } else console.log('Build only: no release tag.');
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

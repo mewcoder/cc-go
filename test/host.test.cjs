@@ -57,6 +57,54 @@ test('RPC propagates results, errors, notifications and disconnects', async () =
   right.dispose();
 });
 
+test('message overloads preserve action identity and separate options from buttons', async t => {
+  const { vscode, peer } = await host(t);
+  const calls = [];
+  let index = 1;
+  peer.call = async (method, args) => { calls.push({ method, args }); return index; };
+  const view = { title: 'View', custom: 42 };
+  const cancel = { title: 'Cancel', isCloseAffordance: true };
+  assert.strictEqual(await vscode.window.showInformationMessage('Ready', cancel, view), view);
+  assert.deepEqual(calls[0].args.items, [cancel, view]);
+  index = 0;
+  assert.strictEqual(await vscode.window.showWarningMessage('Continue?', { modal: true, detail: 'Details' }, view), view);
+  assert.deepEqual(calls[1].args.options, { modal: true, detail: 'Details' });
+  assert.deepEqual(calls[1].args.items, [view]);
+  assert.equal(await vscode.window.showErrorMessage('Failed', 'Retry'), 'Retry');
+  index = null;
+  assert.equal(await vscode.window.showInformationMessage('Dismissed', 'View'), undefined);
+  await vscode.window.showInformationMessage('No actions');
+  assert.deepEqual(calls.at(-1).args.items, []);
+});
+
+test('notifications retain their originating webview across asynchronous interleaved requests', async t => {
+  const { vscode, peer, receiveWebviewMessage } = await host(t);
+  const calls = [];
+  peer.call = async (method, args) => { calls.push({ method, args }); return 0; };
+  const a = vscode.window.createWebviewPanel('chat', 'A', 1);
+  const b = vscode.window.createWebviewPanel('chat', 'B', 1);
+  const ids = vscode.window.tabGroups.all[0].tabs.map(tab => tab.id);
+  const message = { type: 'request', request: { type: 'show_notification', onlyIfNotVisible: true } };
+  const received = [];
+  const finished = [];
+  for (const panel of [a, b]) panel.webview.onDidReceiveMessage(value => {
+    received.push(value);
+    finished.push((async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      await vscode.window.showInformationMessage(panel.title, 'View');
+    })());
+  });
+  receiveWebviewMessage(ids[0], message);
+  peer.events.emit('window.focus', { focused: false });
+  receiveWebviewMessage(ids[1], message);
+  await Promise.all(finished);
+  assert.deepEqual(calls.map(call => call.args.viewId), ids);
+  assert.equal(received[0].request.onlyIfNotVisible, true);
+  assert.equal(received[1].request.onlyIfNotVisible, false);
+  assert.equal(message.request.onlyIfNotVisible, true, 'Do not mutate the webview payload');
+  assert.equal(vscode.window.state.focused, false);
+});
+
 test('configuration uses declared defaults and persists updates with change events', async t => {
   const { vscode } = await host(t);
   const config = vscode.workspace.getConfiguration('claudeCode');

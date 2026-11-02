@@ -12,6 +12,8 @@ Claude Code 的 VS Code 插件挺好用，但我不想在 VS Code 里用它。�
 
 从 [Releases](https://github.com/mewcoder/cc-go/releases) 下载对应版本：
 
+版本变更见 [更新日志](CHANGELOG.md)。
+
 | 系统 | 下载文件 | 使用方式 |
 | --- | --- | --- |
 | macOS Apple Silicon（M 系列，macOS 13+） | `.dmg` | 打开后，把 `CC Go.app` 拖进“应用程序” |
@@ -33,6 +35,7 @@ Claude Code 的 VS Code 插件挺好用，但我不想在 VS Code 里用它。�
 
 ## 日常使用
 
+- 插件的信息、警告和错误消息显示为非阻塞通知，按钮选择和关闭结果按 VS Code 的方式回传给插件；显式要求确认的消息仍使用原生对话框。窗口在后台、最小化或隐藏时，插件通知还会尝试显示系统提醒，点击可唤回窗口和来源会话，再通过通知中的按钮继续操作。macOS 首次提醒会请求通知权限；系统提醒不可用时仍可在应用内查看和操作。
 - Settings 中的 **Theme** 统一控制侧边栏、插件页面、代码块和 Diff 配色。除 Default 外，内置 GitHub、Pierre、VS Code、One、Vitesse、Catppuccin、Solarized、Min、Rosé Pine 共 9 组浅深配对主题。侧边栏深浅快捷切换保留当前主题组，选择即时生效并在重启后保留。One 使用标准 One Light / One Dark，不含 Pro；Vitesse 使用官方 Vitesse Light / Vitesse Dark。所有主题离线可用；Monaco 与 TextMate 分词不同，部分语言的细节配色可能与 Claude Desktop 有差异。
 - 左侧 Project 旁的 `...` 菜单可导入已有 Claude Code CLI 会话，切换分项目/合并显示，以及最近更新/手动排序。手动模式下可拖拽会话，或聚焦会话后按 Alt+上下方向键调整；分项目模式只在同一项目内排序。选择与顺序会保存，重启后保留。
 - 项目默认按添加顺序显示，分项目模式下可拖拽项目行，或聚焦项目名后按 Alt+上下方向键调整顺序；项目顺序与会话排序独立，新项目追加在末尾。
@@ -74,6 +77,28 @@ CC_GO_NATIVE_VSIX_SMOKE=1 CC_GO_SMOKE_VSIX=/absolute/path/to/claude.vsix /tmp/cc
 
 **只有推送 `v*` 标签才自动发布**；推送 `main` 不发版，手动运行 Actions 只构建。
 
-先用 `npm version 0.1.0-beta.2 --no-git-tag-version` 更新版本并提交，再推送对应标签，例如 `v0.1.0-beta.2`。标签必须与 `package.json` 版本一致。
+更新说明统一维护在 [CHANGELOG.md](CHANGELOG.md)，GitHub Release 自动读取对应版本，不再另写一份：
 
-Actions 会测试和构建 Mac ARM64、Windows x64，检查两份产物的 SHA-256，全部上传到草稿后才公开 Release。`beta` 版本标记为预发布；稳定后使用 `0.1.0`。
+1. 日常把用户可感知的变化记在 `Unreleased`，按需要使用“新增 / 改进 / 修复”分类。
+2. 发版前，将这批内容移到 `## [版本号] - YYYY-MM-DD` 下，日期使用北京时间；保留 `Unreleased` 给下一批开发。
+3. 更新版本，检查并预览 Release 正文。例如下一版：
+
+   ```sh
+   npm version 0.1.0-beta.11 --no-git-tag-version
+   npm run release:check
+   npm run --silent release:notes
+   npm test
+   ```
+
+4. 确认本批功能代码已提交后，提交更新日志及版本文件，再推送对应版本标签：
+
+   ```sh
+   git add CHANGELOG.md package.json package-lock.json
+   git commit -m "Release v0.1.0-beta.11"
+   git tag -a v0.1.0-beta.11 -m "CC Go v0.1.0-beta.11"
+   git push --atomic origin main refs/tags/v0.1.0-beta.11
+   ```
+
+标签必须与 `package.json` 版本一致，更新日志必须有唯一的对应版本、有效日期和非空内容，否则 Actions 在打包前停止。手动运行 Actions 只检查构建，不要求为开发中的版本提前填写发布记录。
+
+Actions 会测试和构建 Mac ARM64、Windows x64，检查两份产物的 SHA-256，全部上传到草稿后才公开 Release。正文使用对应版本的更新日志，并附下载要求和校验说明；重试已有草稿也会同步正文。`beta` 版本标记为预发布；稳定后使用 `0.1.0`。构建失败、未公开的版本不计入已发布历史。

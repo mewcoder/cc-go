@@ -46,6 +46,7 @@ func (a *App) snapshot() map[string]any {
 		"phase": a.phase, "label": a.label, "error": a.errorText,
 		"workspace": workspace, "theme": theme, "themeKind": themeKind(theme), "themeFamily": themeFamily(theme).ID, "version": a.version,
 		"windowVisible": !a.windowHidden,
+		"notifications": a.notificationSnapshotLocked(),
 		"nativeMenu":    a.native.ShowMenu != nil,
 		"views":         views, "logs": append([]string{}, a.logs...), "dataDir": a.cfg.DataDir,
 		"logsOpen": a.logsOpen, "settingsOpen": a.settingsOpen, "pluginSetupOpen": a.pluginSetupOpen,

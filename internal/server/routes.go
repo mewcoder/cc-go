@@ -68,9 +68,10 @@ func (a *App) Handler() http.Handler {
 			}
 			return
 		}
-		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "native-relay.js": true, "history.js": true, "chat-search.js": true, "sidebar-list.js": true, "setup.js": true, "settings-width.js": true, "settings-interface-size.js": true, "settings-theme.js": true, "code-themes.js": true, "hud.js": true, "selection.js": true, "git-review.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
+		allowed := map[string]bool{"shell.html": true, "shell.js": true, "shell.css": true, "theme.css": true, "theme-light.css": true, "desktop.js": true, "native-relay.js": true, "history.js": true, "chat-search.js": true, "sidebar-list.js": true, "setup.js": true, "settings-width.js": true, "settings-interface-size.js": true, "settings-theme.js": true, "settings-navigation.js": true, "code-themes.js": true, "hud.js": true, "selection.js": true, "git-review.js": true, "workspace-menu.js": true, "host.css": true, "scrollbars.css": true}
 		allowed["vendor/diff2html/diff2html.min.js"] = true
 		allowed["vendor/diff2html/diff2html.min.css"] = true
+		allowed["notifications.js"] = true
 		if !allowed[filename] {
 			http.NotFound(w, r)
 			return
@@ -85,6 +86,7 @@ func (a *App) Handler() http.Handler {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			html := strings.Replace(string(b), "frame-src 'none'", "frame-src "+a.ViewURL+"; connect-src 'self'", 1)
 			html = strings.Replace(html, `<script src="shell.js"`, `<link rel="stylesheet" href="vendor/diff2html/diff2html.min.css"><link rel="stylesheet" href="host.css"><link rel="stylesheet" href="scrollbars.css"><script src="host-config.js"></script><script src="hud.js"></script><script src="selection.js"></script><script src="native-relay.js"></script><script src="vendor/diff2html/diff2html.min.js"></script><script src="git-review.js"></script><script src="desktop.js"></script><script src="workspace-menu.js" defer></script><script src="sidebar-list.js" defer></script><script src="history.js" defer></script><script src="chat-search.js" defer></script><script src="setup.js" defer></script><script src="settings-width.js" defer></script><script src="settings-interface-size.js" defer></script><script src="shell.js"`, 1)
+			html = strings.Replace(html, `<script src="desktop.js">`, `<script src="notifications.js"></script><script src="desktop.js">`, 1)
 			b = []byte(html)
 		case strings.HasSuffix(filename, ".js"):
 			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
@@ -119,6 +121,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		Persist                                 bool
 		Draft                                   *bool
 		Force                                   bool
+		Action                                  *int
+		Focused                                 bool
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&args); err != nil {
 		http.Error(w, "Invalid request", 400)
@@ -147,6 +151,17 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch r.URL.Path {
+	case "/api/notification-action":
+		if args.Action == nil {
+			err = errors.New("a notification action is required")
+		} else {
+			err = a.answerNotification(args.ID, *args.Action)
+		}
+	case "/api/window-focus":
+		// Native focus events are authoritative in the desktop app.
+		if native.Notify == nil {
+			a.SetWindowFocused(args.Focused)
+		}
 	case "/api/cancel-download":
 		a.cancelDownload()
 	case "/api/project":

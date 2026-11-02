@@ -50,8 +50,8 @@
   menu.setAttribute('role', 'menu');
   menu.setAttribute('aria-label', 'Project actions');
   const opener = button('import-history', 'hud-picker-choice');
-  opener.title = 'Import Claude Code CLI Sessions';
-  opener.setAttribute('aria-label', 'Import Claude Code CLI Sessions');
+  opener.title = 'Import Claude Code Sessions';
+  opener.setAttribute('aria-label', 'Import Claude Code Sessions');
   opener.setAttribute('role', 'menuitem');
   opener.setAttribute('aria-haspopup', 'dialog');
   opener.setAttribute('aria-controls', 'history-dialog');
@@ -71,7 +71,7 @@
   const menuError = create('p', 'hud-picker-status');
   menuError.setAttribute('role', 'alert');
   menuError.hidden = true;
-  menu.append(display, sorting, separator, archived, opener, submenu, menuError);
+  menu.append(display, sorting, separator, opener, archived, submenu, menuError);
   document.body.append(menu);
   let latestState = {}, menuBusy = false, submenuKey, submenuTrigger;
   const radioItems = [];
@@ -209,7 +209,7 @@
       trigger.focus();
     } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
-      const choices = submenuKey && submenu.contains(event.target) ? radioItems.map(value => value.item) : [display, sorting, archived, opener];
+      const choices = submenuKey && submenu.contains(event.target) ? radioItems.map(value => value.item) : [display, sorting, opener, archived];
       const current = choices.indexOf(document.activeElement);
       const index = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
         : (current + (event.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length;
@@ -226,11 +226,11 @@
   dialog.id = 'history-dialog';
   dialog.setAttribute('aria-labelledby', 'history-title');
   const header = create('header', 'history-header');
-  const title = create('h1', '', 'Import Claude Code CLI Sessions');
+  const title = create('h1', '', 'Import Claude Code Sessions');
   title.id = 'history-title';
   const close = button('history-close', 'icon-button');
   close.title = 'Close';
-  close.setAttribute('aria-label', 'Close Import Claude Code CLI Sessions');
+  close.setAttribute('aria-label', 'Close Import Claude Code Sessions');
   close.autofocus = true;
   close.append(icon(['m6 6 12 12', 'M18 6 6 18']));
   header.append(title, close);

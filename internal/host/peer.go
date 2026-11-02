@@ -107,6 +107,17 @@ func Start(node, script, directory string, env []string, handler Handler, event 
 
 func (p *Peer) respond(m Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	if m.Method == "dialog.message" {
+		cancel()
+		ctx, cancel = context.WithCancel(context.Background())
+		go func() {
+			select {
+			case <-p.done:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+	}
 	defer cancel()
 	var value any
 	var err error

@@ -164,6 +164,9 @@ func (a *App) SetWindowVisible(visible bool) {
 	if changed && visible {
 		a.project.invalidate()
 	}
+	if !visible {
+		a.SetWindowFocused(false)
+	}
 }
 
 func readProject(directory string) ProjectInfo {

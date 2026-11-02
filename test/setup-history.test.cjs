@@ -173,7 +173,7 @@ test('history import lives in the Project actions menu outside initialization', 
   assert.equal(more.attributes['aria-expanded'], 'false');
   assert.equal(opener.parentElement.id, 'project-menu');
   assert.equal(opener.attributes.role, 'menuitem');
-  assert.equal(opener.attributes['aria-label'], 'Import Claude Code CLI Sessions');
+  assert.equal(opener.attributes['aria-label'], 'Import Claude Code Sessions');
   assert.equal(opener.attributes['aria-haspopup'], 'dialog');
   assert.equal(opener.children[0].tagName, 'span');
   assert.equal(opener.children[0].textContent, 'Import');
@@ -247,6 +247,8 @@ test('Archived Chats is a keyboard-accessible Project action that closes the men
   const next = () => menu.handlers.keydown({ key: 'ArrowDown', preventDefault() {} });
   next();
   assert.equal(h.focused, h.byID('sidebar-sort'));
+  next();
+  assert.equal(h.focused, h.byID('import-history'));
   next();
   assert.equal(h.focused, archived);
   archived.onclick();
@@ -757,7 +759,7 @@ test('setup save warnings are nonfatal, survive polling and clear after a succes
 test('CLI sessions import is compact and has no description or selection instructions', async () => {
   const h = setupHarness('active');
   await h.byID('import-history').onclick();
-  assert.equal(h.byID('history-title').textContent, 'Import Claude Code CLI Sessions');
+  assert.equal(h.byID('history-title').textContent, 'Import Claude Code Sessions');
   assert.equal(h.cancelButton.textContent, 'Cancel');
   assert.equal(h.importButton.textContent, 'Import');
   assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../web/history.js'), 'utf8'), /\p{Script=Han}/u);
@@ -775,7 +777,7 @@ test('CLI sessions import is compact and has no description or selection instruc
   assert.equal(pathValue.attributes.dir, 'ltr');
   assert.equal(pathValue.textContent, '/projects/one');
   const css = fs.readFileSync(path.join(__dirname, '../web/host.css'), 'utf8');
-  assert.match(css, /\.history-dialog \{[^}]*width: min\(420px, calc\(100vw - 24px\)\)/);
+  assert.match(css, /\.history-dialog \{[^}]*width: min\(550px, calc\(100vw - 32px\)\)/);
   assert.match(css, /\.history-project-path \{[^}]*text-overflow: ellipsis; white-space: nowrap;/);
   assert.match(css, /\.history-project-path \{[^}]*direction: rtl; text-align: left;/);
 });

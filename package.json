@@ -8,7 +8,9 @@
     "dev": "node scripts/run.cjs dev",
     "web": "node scripts/run.cjs web",
     "test": "node scripts/run.cjs test",
-    "build": "node scripts/run.cjs build"
+    "build": "node scripts/run.cjs build",
+    "release:check": "node scripts/release.cjs check",
+    "release:notes": "node scripts/release.cjs notes"
   },
   "engines": {
     "node": ">=22"

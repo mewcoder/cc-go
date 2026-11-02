@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="shell.css">
     <link rel="stylesheet" href="theme-palettes.css">
     <script src="settings-theme.js" defer></script>
+    <script src="settings-navigation.js" defer></script>
     <script src="shell.js" defer></script>
   </head>
   <body data-phase="starting" data-theme="dark" data-initializing="true">
@@ -88,13 +89,21 @@
     </div>
 
     <dialog id="settings-panel" class="settings-panel" aria-labelledby="settings-title" hidden>
-      <header class="settings-header">
+      <aside class="settings-sidebar">
+        <div class="settings-search">
+          <input id="settings-search" type="search" placeholder="Search" aria-label="Search settings" aria-controls="settings-list" autocomplete="off" spellcheck="false">
+        </div>
         <h1 id="settings-title">Settings</h1>
-        <button id="close-settings" class="settings-close" type="button" title="Close Settings" aria-label="Close Settings" autofocus></button>
-      </header>
-      <div id="settings-content" class="settings-content">
+        <nav id="settings-navigation" class="settings-navigation" aria-label="Settings categories">
+          <button type="button" data-category="general" aria-current="page"><span class="settings-nav-icon" data-icon="settings"></span>General</button>
+          <button type="button" data-category="extension"><span class="settings-nav-icon" data-icon="code"></span>Extension</button>
+        </nav>
+      </aside>
+      <button id="close-settings" class="settings-close" type="button" title="Close Settings" aria-label="Close Settings" autofocus></button>
+      <main id="settings-content" class="settings-content" aria-label="Settings content">
         <div id="settings-list" class="settings-list"></div>
-      </div>
+        <p id="settings-empty" class="settings-empty" role="status" hidden>No settings found. Try a different search.</p>
+      </main>
     </dialog>
 
     <section id="log-panel" class="log-panel" aria-labelledby="log-title" hidden>

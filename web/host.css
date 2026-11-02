@@ -28,9 +28,9 @@ body[data-theme-family]:not([data-theme-family="default"]) .settings-panel {
   --settings-switch-background: var(--vscode-checkbox-background, var(--vscode-input-background));
   --settings-switch-border: var(--vscode-checkbox-border, var(--vscode-input-border));
   --settings-switch-thumb: var(--vscode-checkbox-foreground, var(--vscode-foreground));
-  --settings-surface: var(--vscode-sideBar-background);
+  --settings-surface: var(--vscode-editor-background);
   --settings-input: var(--vscode-input-background);
-  --settings-header: var(--vscode-editor-background);
+  --settings-header: var(--vscode-sideBar-background);
   --settings-line: var(--vscode-panel-border);
   --settings-control-border: var(--vscode-input-border);
   --settings-text: var(--vscode-foreground);
@@ -224,7 +224,7 @@ body[data-theme="light"] .session-hud .hud-selectable:hover { color: var(--shell
 #search-chats { display: grid; place-items: center; }
 :root:not([data-platform="darwin"]):not([data-platform="win32"]) .window-drag { flex-basis: 52px; }
 :root:not([data-platform="darwin"]):not([data-platform="win32"]) .content > .window-drag { flex-basis: 36px; flex-direction: column; }
-.history-dialog.chat-search-dialog { width: min(550px, calc(100vw - 32px)); height: 420px; max-height: calc(100dvh - 48px); font-family: var(--vscode-chat-font-family, var(--vscode-font-family)); font-size: var(--vscode-chat-font-size, 12px); }
+.history-dialog.chat-search-dialog { font-family: var(--vscode-chat-font-family, var(--vscode-font-family)); font-size: var(--vscode-chat-font-size, 12px); }
 .chat-search-dialog .history-header { padding: 4px 12px; }
 .chat-search-dialog .history-header h1 { font-size: inherit; font-weight: 500; line-height: 18px; }
 .chat-search-dialog .history-header .icon-button { width: 24px; min-height: 24px; }
@@ -293,7 +293,6 @@ body[data-theme="light"] .session-hud .hud-selectable:hover { color: var(--shell
 :root[data-platform="win32"] body.sidebar-collapsed #toggle-sidebar { margin-left: 32px; }
 /* Optical alignment with the macOS traffic lights, in both sidebar states. */
 :root[data-platform="darwin"] .window-toggle { top: 3px; }
-.settings-panel { width: min(760px, calc(100vw - 32px)); }
 /* A focus border can be transparent; use separate track and thumb theme colors. */
 .settings-panel .setting-switch:not(:checked) {
   border-color: var(--settings-switch-border, var(--settings-control-border));
@@ -302,47 +301,30 @@ body[data-theme="light"] .session-hud .hud-selectable:hover { color: var(--shell
 .settings-panel .setting-switch::after { background: var(--settings-switch-thumb, #ffffff); }
 .settings-panel .setting-switch:checked::after { background: var(--settings-accent-foreground, #ffffff); }
 .settings-panel .setting-switch:hover { border-color: var(--settings-accent); }
-.setting-width { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.setting-width label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.setting-width { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; max-width: 100%; padding: 2px; border-radius: 6px; background: var(--settings-header); }
+.setting-width label { position: relative; display: inline-flex; align-items: center; cursor: pointer; white-space: nowrap; }
 .setting-width input[type="radio"] {
   appearance: none;
   -webkit-appearance: none;
-  display: inline-grid;
-  place-content: center;
-  flex: 0 0 auto;
-  width: calc(14px * var(--host-font-scale, 1));
-  height: calc(14px * var(--host-font-scale, 1));
+  position: absolute;
+  width: 1px;
+  height: 1px;
   margin: 0;
-  border: 1px solid var(--settings-switch-border, var(--settings-control-border));
-  border-radius: 50%;
-  background: var(--settings-switch-background, var(--settings-input));
-  cursor: inherit;
-}
-.setting-width input[type="radio"]::after {
-  content: "";
-  width: calc(4px * var(--host-font-scale, 1));
-  height: calc(4px * var(--host-font-scale, 1));
-  border-radius: 50%;
-  background: var(--settings-accent-foreground, #ffffff);
+  padding: 0;
   opacity: 0;
 }
-.setting-width input[type="radio"]:checked { border-color: var(--settings-accent); background: var(--settings-accent); }
-.setting-width input[type="radio"]:checked::after { opacity: 1; }
-.setting-width input[type="radio"]:hover:not(:disabled) { border-color: var(--settings-accent); }
-.setting-width input[type="radio"]:focus-visible { outline: 2px solid var(--settings-accent); outline-offset: 2px; }
+.setting-width label span { padding: 4px 8px; border: 1px solid transparent; border-radius: 4px; color: var(--settings-secondary); line-height: 1.4; }
+.setting-width input:checked + span { border-color: var(--settings-line); background: var(--settings-surface); color: var(--settings-text); box-shadow: 0 1px 3px #00000012; }
+.setting-width label:hover span { color: var(--settings-text); }
+.setting-width input:focus-visible + span { outline: 2px solid var(--settings-accent); outline-offset: 1px; }
 .setting-width:has(input:disabled) label { cursor: default; opacity: 0.6; }
 @media (forced-colors: active) {
-  .setting-width input[type="radio"] { forced-color-adjust: none; border-color: ButtonText; background: Canvas; }
-  .setting-width input[type="radio"]:checked { border-color: Highlight; background: Highlight; }
-  .setting-width input[type="radio"]::after { background: HighlightText; }
-  .setting-width input[type="radio"]:is(:hover, :focus-visible) { border-color: Highlight; outline-color: Highlight; }
+  .setting-width input:checked + span { forced-color-adjust: none; border-color: Highlight; background: Highlight; color: HighlightText; }
+  .setting-width input:focus-visible + span { outline-color: Highlight; }
 }
 @media (max-width: 450px) {
   .setting-row:has(.setting-width) { flex-direction: column; align-items: stretch; gap: 12px; }
   .setting-row:has(.setting-width) .setting-control { align-items: flex-start; }
-}
-@media (max-width: 680px) {
-  .settings-panel { width: calc(100vw - 24px); }
 }
 :root:is([data-platform="darwin"], [data-platform="win32"]) body:not(.sidebar-collapsed) > .window-drag {
   padding-left: calc(var(--shell-sidebar-width) - 60px);
@@ -492,8 +474,10 @@ body[data-theme="light"] .setup-vertical { --setup-success: var(--shell-success,
 .history-dialog {
   display: flex;
   flex-direction: column;
-  width: min(420px, calc(100vw - 24px));
-  max-height: min(420px, calc(100dvh - 48px));
+  width: min(550px, calc(100vw - 32px));
+  height: 420px;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
   margin: auto;
   padding: 0;
   border: 1px solid var(--shell-selected-background);
@@ -509,7 +493,7 @@ body[data-theme="light"] .setup-vertical { --setup-success: var(--shell-success,
 .history-header .icon-button { display: grid; place-items: center; }
 .history-header .icon { width: 16px; height: 16px; }
 .history-status { flex-shrink: 0; margin: 12px; color: var(--shell-muted); font-size: calc(12px * var(--host-font-scale, 1)); line-height: 20px; }
-.history-project-list { min-height: 0; max-height: 272px; padding: 4px 6px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--shell-scrollbar-thumb) transparent; }
+.history-project-list { flex: 1; min-height: 0; padding: 4px 6px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--shell-scrollbar-thumb) transparent; }
 .history-project-list:empty { display: none; }
 .history-project { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: calc(12px * var(--host-font-scale, 1)); line-height: 18px; }
 .history-project:hover:not(:has(input:disabled)) { background: var(--shell-hover-background); }
@@ -580,7 +564,7 @@ body[data-theme="light"] .history-error { color: var(--shell-error, #b64036); }
   .git-review-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(100px, 30%) minmax(0, 1fr); }
   .git-review-sidebar { border-right: 0; border-bottom: 1px solid var(--shell-border); }
 }
-.history-footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--shell-border); }
+.history-footer { display: flex; flex-shrink: 0; justify-content: flex-end; gap: 6px; margin-top: auto; padding: 8px 12px; border-top: 1px solid var(--shell-border); }
 .history-footer button { min-height: 28px; padding: 0 10px; border-color: var(--shell-selected-background); }
 .history-footer .history-select-all { margin-right: auto; }
 .history-footer .history-primary { background: var(--shell-primary-background, var(--shell-accent)); color: var(--shell-primary-foreground, var(--shell-background)); }
@@ -597,3 +581,20 @@ body[data-theme="light"] .history-error { color: var(--shell-error, #b64036); }
   .setup-card-body { grid-template-columns: minmax(0, 1fr) 56px; }
   .setup-vertical .setup-card-body > .setup-actions { grid-column: 1 / -1; grid-row: auto; justify-content: flex-end; }
 }
+.host-notifications { position: fixed; right: 16px; bottom: 16px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); max-height: min(60vh, 600px); overflow: auto; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size, 12px); -webkit-app-region: no-drag; --app-region: no-drag; }
+.host-notifications[hidden] { display: none; }
+.host-notification { flex-shrink: 0; padding: 10px 12px 12px; border: 1px solid var(--vscode-notifications-border, var(--shell-border)); border-radius: 6px; background: var(--vscode-notifications-background, var(--vscode-editor-background)); color: var(--vscode-notifications-foreground, var(--vscode-editor-foreground)); box-shadow: 0 4px 16px #0003; }
+.host-notification-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.host-notification-kind { color: var(--vscode-notificationsInfoIcon-foreground, var(--shell-accent)); }
+.host-notification[data-type="warning"] .host-notification-kind { color: var(--vscode-notificationsWarningIcon-foreground, var(--vscode-editorWarning-foreground, #c78b35)); }
+.host-notification[data-type="error"] .host-notification-kind, .host-notification-error { color: var(--vscode-notificationsErrorIcon-foreground, var(--vscode-errorForeground, #d66)); }
+.host-notification-message, .host-notification-detail, .host-notification-error { margin: 0; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.host-notification-detail { margin-top: 6px; color: var(--shell-muted); }
+.host-notification-close { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--shell-muted); font: inherit; font-size: 18px; cursor: pointer; }
+.host-notification-close:hover { color: var(--vscode-editor-foreground); background: var(--vscode-toolbar-hoverBackground); }
+.host-notification-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.host-notification-action { margin-top: 10px; padding: 4px 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 3px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); font: inherit; cursor: pointer; }
+.host-notification-action:hover { background: var(--vscode-button-hoverBackground); }
+.host-notification button:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--shell-accent)); outline-offset: 2px; }
+.host-notification button:disabled { cursor: default; opacity: 0.6; }
+.host-notification-error { margin-top: 6px; }

@@ -45,6 +45,9 @@
     settingsTitle: element('settings-title'),
     settingsContent: element('settings-content'),
     settingsList: element('settings-list'),
+    settingsSearch: element('settings-search'),
+    settingsNavigation: element('settings-navigation'),
+    settingsEmpty: element('settings-empty'),
     closeSettings: element('close-settings'),
     message: element('phase-message'),
     messageTitle: element('message-title'),
@@ -144,6 +147,8 @@
     refresh: ['M3 11a9 9 0 0 1 15.4-6.4L21 7', 'M21 3v4h-4', 'M21 13a9 9 0 0 1-15.4 6.4L3 17', 'M7 17H3v4'],
     upgrade: ['M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', 'M12 16V8', 'm8 12 4-4 4 4'],
     'panel-left': ['M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z', 'M9 3v18'],
+    code: ['m8 5-7 7 7 7', 'm16 5 7 7-7 7', 'm14 3-4 18'],
+    search: ['M21 21l-4.35-4.35', 'M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0'],
   };
 
   // Original path from the plugin's resources/claude-logo.svg.
@@ -175,6 +180,12 @@
   ui.theme.append(icon('sun'));
   ui.theme.dataset.theme = 'dark';
   ui.closeSettings.append(icon('x'));
+  ui.settingsSearch.parentElement.prepend(icon('search'));
+  for (const slot of ui.settingsNavigation.querySelectorAll('[data-icon]')) slot.append(icon(slot.dataset.icon));
+  const settingsNavigation = window.goSettingsNavigation.create({
+    search: ui.settingsSearch, navigation: ui.settingsNavigation,
+    content: ui.settingsContent, list: ui.settingsList, empty: ui.settingsEmpty,
+  });
   ui.pluginUpdate.append(icon('upgrade'));
   ui.toggleSidebar.append(icon('panel-left'));
   applySidebar();
@@ -343,6 +354,22 @@
     const extraKeys = Object.keys(properties).filter(key => !knownKeys.has(key));
     keys.push(...extraKeys);
     ui.settingsList.replaceChildren();
+    const sections = new Map();
+    for (const definition of window.goSettingsNavigation.sections) {
+      const section = document.createElement('section');
+      section.className = 'settings-section';
+      section.dataset.category = definition.category;
+      const heading = document.createElement('h2');
+      heading.id = `settings-section-${definition.id}`;
+      const context = document.createElement('span');
+      context.className = 'settings-section-context';
+      context.textContent = definition.category === 'general' ? 'General / ' : 'Extension / ';
+      heading.append(context, document.createTextNode(definition.title));
+      section.setAttribute('aria-labelledby', heading.id);
+      section.append(heading);
+      sections.set(definition.id, section);
+      ui.settingsList.append(section);
+    }
     for (const key of keys) {
       const property = properties[key];
       if (!property) continue;
@@ -362,6 +389,7 @@
       description.className = 'setting-description';
       description.id = `description-${key}`;
       description.textContent = property.description ?? property.markdownDescription ?? '';
+      row.dataset.search = `${key} ${title} ${description.textContent}`.toLowerCase();
       copy.append(label, description);
       const controls = document.createElement('div');
       controls.className = 'setting-control';
@@ -377,8 +405,9 @@
       }
       controls.append(createSettingControl(key, property, values[key], status), status);
       row.append(copy, controls);
-      ui.settingsList.append(row);
+      sections.get(window.goSettingsNavigation.sectionFor(key)).append(row);
     }
+    settingsNavigation.refresh();
   }
   let state = { phase: 'starting', label: '', logs: [], tabs: [] };
   const sidebarList = window.goSidebarList.create(document, desktop, {
@@ -920,7 +949,7 @@
     void runCommand('settings', async () => {
       settingsData = await desktop.openSettings();
       renderSettings();
-      ui.settingsContent.scrollTop = 0;
+      settingsNavigation.reset();
       requestAnimationFrame(() => {
         if (ui.settingsPanel.open) ui.closeSettings.focus();
       });

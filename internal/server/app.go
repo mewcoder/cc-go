@@ -44,6 +44,7 @@ type Native struct {
 	SelectVSIX       func() (string, error)
 	SelectNode       func() (string, error)
 	Message          func(string, string, []string) (int, error)
+	Notify           func(string, string, string, func()) (func(), error)
 }
 
 type DesktopState struct {
@@ -106,6 +107,8 @@ type App struct {
 	pluginSetupOpen bool
 	pluginUpdating  bool
 	windowHidden    bool
+	windowUnfocused bool
+	notifications   []*pendingNotification
 	activeSessionID string
 	setupStatus     string
 	download        plugin.DownloadProgress
@@ -617,7 +620,12 @@ func (a *App) activate(ctx context.Context) (err error) {
 	if a.cfg.ModulesDir != "" {
 		env = append(env, "NODE_PATH="+a.cfg.ModulesDir)
 	}
-	p, err := host.Start(node, script, workspace, env, a.hostCall, func(method string, args json.RawMessage) {
+	p, err := host.Start(node, script, workspace, env, func(ctx context.Context, method string, args json.RawMessage) (any, error) {
+		if method == "dialog.message" {
+			return a.showPluginMessage(ctx, generation, args)
+		}
+		return a.hostCall(ctx, method, args)
+	}, func(method string, args json.RawMessage) {
 		a.hostEvent(generation, method, args)
 	}, logWriter{a})
 	if err != nil {
@@ -630,6 +638,7 @@ func (a *App) activate(ctx context.Context) (err error) {
 		return errors.New("plugin host exited during initialization")
 	}
 	a.peer = p
+	windowFocused := !a.windowUnfocused && !a.windowHidden
 	a.mu.Unlock()
 	deadline, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
@@ -639,7 +648,7 @@ func (a *App) activate(ctx context.Context) (err error) {
 	_, err = p.Call(deadline, "activate", map[string]any{
 		"extensionPath": prepared.ExtensionPath, "packageJSON": prepared.PackageJSON,
 		"workspacePath": workspace, "storageRoot": a.cfg.DataDir,
-		"machineId": a.machineID(), "language": "en", "webviewOrigin": a.ViewURL,
+		"machineId": a.machineID(), "language": "en", "webviewOrigin": a.ViewURL, "windowFocused": windowFocused,
 	})
 	if err != nil {
 		return err
@@ -697,6 +706,7 @@ func (a *App) stopHost() {
 }
 
 func (a *App) detachHostLocked() *host.Peer {
+	a.clearNotificationsLocked("")
 	p := a.peer
 	a.peer = nil
 	// Ignore late events from this process after a replacement host is started.
@@ -812,6 +822,7 @@ func (a *App) hostEvent(generation uint64, method string, args json.RawMessage) 
 			view.Title = v.Title
 		}
 	case "webview.dispose":
+		a.clearNotificationsLocked(v.ID)
 		if view := a.views[v.ID]; view != nil {
 			view.close()
 		}
@@ -844,7 +855,6 @@ func (a *App) hostEvent(generation uint64, method string, args json.RawMessage) 
 func (a *App) hostCall(ctx context.Context, method string, args json.RawMessage) (any, error) {
 	var v struct {
 		ID, Key, Value, Text, URI, Type, Message, Path string
-		Items                                          []json.RawMessage
 		MessageData                                    json.RawMessage `json:"-"`
 	}
 	_ = json.Unmarshal(args, &v)
@@ -880,28 +890,10 @@ func (a *App) hostCall(ctx context.Context, method string, args json.RawMessage)
 			return nil, native.Copy(v.Text)
 		}
 	case "dialog.message":
-		var buttons []string
-		for _, item := range v.Items {
-			var title string
-			if json.Unmarshal(item, &title) != nil {
-				var obj struct{ Title string }
-				_ = json.Unmarshal(item, &obj)
-				title = obj.Title
-			}
-			buttons = append(buttons, title)
-		}
-		if len(buttons) == 0 {
-			a.Log(v.Type, v.Message)
-			return nil, nil
-		}
-		if native.Message != nil {
-			idx, err := native.Message(v.Type, v.Message, buttons)
-			if err != nil || idx < 0 || idx >= len(v.Items) {
-				return nil, err
-			}
-			return v.Items[idx], nil
-		}
-		return nil, errors.New("native confirmation requires desktop mode")
+		a.mu.Lock()
+		generation := a.hostGeneration
+		a.mu.Unlock()
+		return a.showPluginMessage(ctx, generation, args)
 	case "secrets.get":
 		value, err := keyring.Get("claude-vsix-go", v.Key)
 		if errors.Is(err, keyring.ErrNotFound) {

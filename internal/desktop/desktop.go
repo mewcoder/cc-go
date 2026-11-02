@@ -37,6 +37,9 @@ func Run(backend *server.App) error {
 		native := nativeServices(window)
 		native.ShowMenu = func() { menu.PopupAt(window, 8, 30) }
 		backend.SetNative(native)
+		backend.SetWindowFocused(window.IsFocused())
+		window.OnFocus(func() { backend.SetWindowFocused(true) })
+		window.OnBlur(func() { backend.SetWindowFocused(false) })
 		window.OnHide(func() { backend.SetWindowVisible(false) })
 		window.OnMinimize(func() { backend.SetWindowVisible(false) })
 		window.OnShow(func() { backend.SetWindowVisible(!window.IsMinimized()) })
@@ -127,6 +130,21 @@ func nativeServices(window *mygo.Window) server.Native {
 				return -1, err
 			}
 			return result.Button, nil
+		},
+		Notify: func(id, kind, message string, clicked func()) (func(), error) {
+			title := "Claude Code"
+			if kind == "warning" {
+				title += " - Warning"
+			} else if kind == "error" {
+				title += " - Error"
+			}
+			note := mygo.NewNotification(mygo.NotificationOptions{ID: id, Title: title, Body: message, Group: "cc-go"})
+			note.OnClick(func() {
+				note.Close()
+				showMainWindow(window)
+				go clicked()
+			})
+			return note.Close, note.Show()
 		},
 	}
 }

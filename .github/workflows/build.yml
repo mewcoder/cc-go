@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Validate release version (manual runs build only)
+      - name: Validate release version and changelog (manual runs build only)
         env:
           RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
         run: node scripts/release.cjs validate-tag
