@@ -19,9 +19,9 @@ function fixture() {
     get scrollTop() { return scrollTop; },
     set scrollTop(value) { scrollTop = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)); },
   };
-  const context = { ui: { logPanel: panel, logOutput: output }, sidebarInitialized: true, logsOpen: false, state: {} };
+  const context = { ui: { logPanel: panel, logOutput: output }, sidebarInitialized: true, logsOpen: false, state: {}, actionLogs: [] };
   // Exercise the real log update and state acceptance blocks without the rest of the shell DOM.
-  const logStart = source.indexOf('    const logs = Array.isArray(state.logs)');
+  const logStart = source.indexOf('    const logs = [...(Array.isArray(state.logs)');
   const logEnd = source.indexOf('\n  async function setLogsOpen(', logStart);
   const acceptStart = source.indexOf('  function acceptState(');
   const acceptEnd = source.indexOf('\n  ui.addWorkspace.addEventListener(', acceptStart);

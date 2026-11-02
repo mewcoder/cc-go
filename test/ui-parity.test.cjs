@@ -91,6 +91,23 @@ const approvedChanges = {
     ],
   ],
   'shell.js': [
+    ["  const actionLogs = [];", "  let actionError = '';"],
+    [`  function recordActionError(key, error) {
+    const message = errorText(error);
+    actionLogs.push(\`\${new Date().toISOString()} [error] \${key}: \${message}\`);
+    if (actionLogs.length > 50) actionLogs.shift();
+    return message;
+  }
+
+`, ''],
+    ["    pending.add(key);\n    render();", "    pending.add(key);\n    actionError = '';\n    render();"],
+    ["      recordActionError(key, error);", "      actionError = errorText(error);"],
+    ["    ui.connectionLabel.textContent = phase === 'active' && version ? String(version) : connection;", "    ui.connectionLabel.textContent = actionError ? 'Action failed'\n      : phase === 'active' && version ? String(version) : connection;"],
+    ["    ui.connectionStatus.classList.toggle('has-error', phase === 'error');", "    ui.connectionStatus.classList.toggle('has-error', Boolean(actionError) || phase === 'error');"],
+    ['    ui.connectionStatus.title = versionDetail;', "    ui.connectionStatus.title = `${actionError || error || label}\\n${versionDetail}${state.pluginSetup?.cliError ? `\\n${state.pluginSetup.cliError}` : ''}`;"],
+    ['${connection}, ${versionDetail}', '${actionError || connection}, ${versionDetail}'],
+    ["    const logs = [...(Array.isArray(state.logs) ? state.logs : []), ...actionLogs];\n    if (actionLogs.length) logs.sort((a, b) => (Date.parse(String(a).split(' ', 1)[0]) || 0) - (Date.parse(String(b).split(' ', 1)[0]) || 0));", "    const logs = Array.isArray(state.logs) ? state.logs : [];"],
+    ["      const message = recordActionError('startup', error);\n      if (revision === 0) state = { ...state, phase: 'error', error: message };", "      actionError = errorText(error);\n      if (revision === 0) state = { ...state, phase: 'error', error: actionError };"],
     ["    archiveSearch: element('archive-search'),\n", ''],
     ["    if (!open) ui.archiveSearch.value = '';\n", ''],
     [String.raw`    const allSessions = Array.isArray(state.archivedSessions) ? state.archivedSessions : [];

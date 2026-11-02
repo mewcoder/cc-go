@@ -414,22 +414,28 @@
     list: ui.workspaceList, createRow: createSessionRow, updateRow: updateSessionRow, render, formatPath,
   });
   let logsOpen = false;
-  let actionError = '';
+  const actionLogs = [];
   let unsubscribe;
   let unsubscribeActions;
   let revision = 0;
 
   const errorText = (error) => String(error?.message || error || 'Unknown error');
 
+  function recordActionError(key, error) {
+    const message = errorText(error);
+    actionLogs.push(`${new Date().toISOString()} [error] ${key}: ${message}`);
+    if (actionLogs.length > 50) actionLogs.shift();
+    return message;
+  }
+
   async function runCommand(key, action) {
     if (!desktop || pending.has(key)) return;
     pending.add(key);
-    actionError = '';
     render();
     try {
       await action();
     } catch (error) {
-      actionError = errorText(error);
+      recordActionError(key, error);
     } finally {
       pending.delete(key);
       render();
@@ -819,14 +825,14 @@
       ? error || 'Open VSIX Output for error details.'
       : phase === 'activating' ? 'Starting Claude Code.' : 'Setting up Claude Code.';
     const connection = phase === 'error' ? 'Connection failed' : phase === 'active' ? 'Connected' : 'Connecting';
-    ui.connectionLabel.textContent = actionError ? 'Action failed'
-      : phase === 'active' && version ? String(version) : connection;
-    ui.connectionStatus.classList.toggle('has-error', Boolean(actionError) || phase === 'error');
+    ui.connectionLabel.textContent = phase === 'active' && version ? String(version) : connection;
+    ui.connectionStatus.classList.toggle('has-error', phase === 'error');
     const versionDetail = version ? `${extensionId} · ${version}` : extensionId;
-    ui.connectionStatus.title = `${actionError || error || label}\n${versionDetail}${state.pluginSetup?.cliError ? `\n${state.pluginSetup.cliError}` : ''}`;
-    ui.connectionStatus.setAttribute('aria-label', `${actionError || connection}, ${versionDetail}`);
+    ui.connectionStatus.title = versionDetail;
+    ui.connectionStatus.setAttribute('aria-label', `${connection}, ${versionDetail}`);
 
-    const logs = Array.isArray(state.logs) ? state.logs : [];
+    const logs = [...(Array.isArray(state.logs) ? state.logs : []), ...actionLogs];
+    if (actionLogs.length) logs.sort((a, b) => (Date.parse(String(a).split(' ', 1)[0]) || 0) - (Date.parse(String(b).split(' ', 1)[0]) || 0));
     const logText = logs.length ? logs.map(formatOutputLog).join('\n') : 'No output yet.';
     if (ui.logOutput.textContent !== logText) {
       const follow = ui.logOutput.scrollHeight - ui.logOutput.scrollTop - ui.logOutput.clientHeight <= 24;
@@ -997,8 +1003,8 @@
       const initialState = await desktop.getState();
       if (revision === requestRevision) acceptState(initialState);
     } catch (error) {
-      actionError = errorText(error);
-      if (revision === 0) state = { ...state, phase: 'error', error: actionError };
+      const message = recordActionError('startup', error);
+      if (revision === 0) state = { ...state, phase: 'error', error: message };
       render();
     }
   }
