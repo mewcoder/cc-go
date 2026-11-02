@@ -142,6 +142,11 @@ type App struct {
 
 	sessionMu    sync.Mutex
 	sessionCache map[string]sessionSnapshot
+
+	updateReady      *plugin.Downloaded
+	updateCancel     context.CancelCauseFunc
+	updateDownload   plugin.DownloadProgress
+	updateDownloadAt time.Time
 }
 
 type sessionSnapshot struct {
@@ -579,6 +584,9 @@ func (a *App) cancelDownload() {
 	if a.downloadCancel != nil {
 		a.setupStatus = "cancelling"
 		a.downloadCancel(errDownloadCancelled)
+	}
+	if a.updateCancel != nil {
+		a.updateCancel(errDownloadCancelled)
 	}
 }
 

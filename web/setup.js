@@ -63,13 +63,17 @@
   root.classList.add('setup-vertical');
   const dialog = create('dialog', 'setup-dialog');
   dialog.setAttribute('aria-labelledby', 'setup-title');
-  dialog.addEventListener('cancel', event => event.preventDefault());
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    if (!$('setup-back').hidden) $('setup-back').click();
+  });
   // A modal's top layer blocks the shell titlebar, so it needs its own drag surface.
   const drag = create('div', 'setup-drag');
   drag.setAttribute('aria-hidden', 'true');
   root.before(dialog);
   dialog.append(drag, root);
   const heading = root.querySelector('.setup-heading');
+  heading.append($('setup-back'));
   const steps = $('setup-steps');
   const actionErrors = ['', ''];
   steps.setAttribute('aria-label', 'Setup steps');
@@ -212,7 +216,8 @@
     const view = setupView(state);
     // Cancelling an update leaves the old runtime usable; Retry must download
     // again, not reload that old archive and discard its chat views.
-    const retryDownload = setup.status === 'cancelled' && view.runtimeReady;
+    const updates = Boolean(state.setupComplete) && state.phase === 'active';
+    const retryDownload = setup.status === 'cancelled' && view.runtimeReady && !updates;
     needsRecovery = state.phase === 'error' || setup.status === 'error' || setup.status === 'cancelled' && !view.runtimeReady;
     const initialReady = !state.setupComplete && view.pluginReady && view.runtimeReady && !view.busy && !needsRecovery && !retryDownload;
     const visible = Boolean(state.pluginSetupOpen);
@@ -227,7 +232,7 @@
     root.classList.toggle('setup-updates', Boolean(state.setupComplete) && view.nodeReady);
     cards[0].row.hidden = Boolean(state.setupComplete) && view.nodeReady;
     cards[1].number.hidden = Boolean(state.setupComplete) && view.nodeReady;
-    $('setup-back').hidden = true;
+    $('setup-back').hidden = state.phase !== 'active';
     cards.forEach((card, index) => {
       const current = view.cards[index];
       card.row.dataset.status = current.kind;
@@ -237,8 +242,9 @@
       else card.row.removeAttribute('aria-current');
       text(card.number, current.kind === 'ready' ? '' : String(index + 1));
       text(card.status, current.label);
-      text(card.version, current.version);
-      card.version.hidden = !current.version;
+      const version = updates && index === 1 ? setup.readyVersion || state.extension?.version || '' : current.version;
+      text(card.version, version);
+      card.version.hidden = !version;
       if (index === 0) text(retry, view.busy && !view.nodeReady ? 'Checking…' : 'Retry');
       text(card.hint, current.description || '');
       card.hint.hidden = !card.hint.textContent;
@@ -268,19 +274,20 @@
     progressStatus.hidden = !view.progressText;
     $('setup-retry').disabled = view.busy;
     $('setup-import').disabled = view.busy || !view.nodeReady;
-    updateAvailable = Boolean(setup.updateAvailable);
+    updateAvailable = Boolean(setup.updateReady);
     installLatest = retryDownload || updateAvailable || !view.runtimeReady;
     text(update, needsRecovery || retryDownload ? 'Retry' : setup.checkingUpdate ? 'Checking for Updates…' : updateAvailable ? 'Update' : installLatest ? 'Download' : 'Check for Updates');
     if (view.busy) text(update, view.busyLabel);
-    update.hidden = !view.nodeReady || initialReady;
+    update.hidden = !view.nodeReady || initialReady || setup.status === 'downloading' || updates && (view.busy || Boolean(setup.checkingUpdate));
     update.setAttribute('aria-label', update.textContent);
     // Metadata checks use a separate lock and cannot replace the runtime. Do not
     // let a slow background check block local recovery or a cancelled download retry.
     update.disabled = view.busy || (!needsRecovery && !retryDownload && setup.checkingUpdate) || !view.nodeReady;
-    cancel.hidden = !setup.canCancel;
+    cancel.hidden = updates || !setup.canCancel;
     cancel.disabled = setup.status === 'cancelling';
     text(updateStatus, setup.updateError ? `Failed: ${setup.updateError}`
-      : updateAvailable ? `${setup.latestVersion} available`
+      : updateAvailable ? `${setup.updateVersion} ready to update`
+      : setup.checkingUpdate || setup.updateAvailable ? ''
       : setup.latestVersion ? 'Latest' : '');
     updateStatus.setAttribute('role', setup.updateError ? 'alert' : 'status');
     updateStatus.hidden = view.busy || !updateStatus.textContent || !state.setupComplete && !setup.updateError;
@@ -290,13 +297,16 @@
     cards[1].details.hidden = cards[1].version.hidden && cards[1].hint.hidden && updateStatus.hidden && saveWarning.hidden;
     const indicator = $('plugin-update');
     if (indicator) {
-      indicator.hidden = !(state.phase === 'active' && updateAvailable || state.setupComplete && view.busy);
+      indicator.hidden = state.phase !== 'active' || !updateAvailable || view.busy;
       indicator.disabled = view.busy;
-      indicator.title = view.busy ? [view.busyLabel, view.progressText].filter(Boolean).join(' ') : `Update plugin to ${setup.latestVersion || ''}`;
+      indicator.classList.toggle('is-busy', false);
+      indicator.classList.toggle('is-ready', updateAvailable);
+      indicator.title = `Update plugin to ${setup.updateVersion || ''}`;
       indicator.setAttribute('aria-label', indicator.title);
     }
     canStart = Boolean(state.setupCanStart) && !view.busy;
     start.disabled = !canStart;
+    footer.hidden = updates;
     text(start, state.phase === 'active' ? 'Close' : state.phase === 'activating' ? 'Starting…' : state.setupComplete ? 'Apply' : 'Start');
     return visible;
   }

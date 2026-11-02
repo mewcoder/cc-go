@@ -68,13 +68,22 @@ func (a *App) snapshot() map[string]any {
 		result["phase"] = "setup"
 	}
 	setup := result["pluginSetup"].(map[string]any)
+	setup["updateReady"] = a.updateReady != nil
+	if a.updateReady != nil {
+		setup["updateVersion"] = a.updateReady.Version
+	}
 	setup["source"] = a.state.ArchiveSource
-	setup["targetVersion"] = a.download.Version
-	setup["received"] = a.download.Received
-	setup["total"] = a.download.Total
-	setup["verifying"] = a.download.Verifying
-	setup["bytesPerSecond"] = a.download.BytesPerSecond
-	if time.Since(a.downloadAt) > 2*time.Second {
+	progress, progressAt := a.download, a.downloadAt
+	if a.updateCancel != nil {
+		setup["status"] = "downloading"
+		progress, progressAt = a.updateDownload, a.updateDownloadAt
+	}
+	setup["targetVersion"] = progress.Version
+	setup["received"] = progress.Received
+	setup["total"] = progress.Total
+	setup["verifying"] = progress.Verifying
+	setup["bytesPerSecond"] = progress.BytesPerSecond
+	if time.Since(progressAt) > 2*time.Second {
 		setup["bytesPerSecond"] = float64(0)
 	}
 	setup["canCancel"] = a.downloadCancel != nil && a.setupStatus == "downloading"

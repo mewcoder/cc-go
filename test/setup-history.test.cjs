@@ -62,6 +62,7 @@ function setupHarness(phase = 'setup', nativeExternalLinks = true, formatPath = 
     addEventListener(type, callback) { this.handlers[type] = callback; }
     showModal() { this.open = true; }
     close() { this.open = false; }
+    click() { (this.handlers.click || this.onclick)?.(); }
     focus() { focused = this; }
     getBoundingClientRect() { return this.rect; }
     contains(target) { return this === target || this.children.some(child => child.contains(target)); }
@@ -547,6 +548,7 @@ test('download progress and phases remain visible in the plugin card and clear a
   assert.equal(progress.value, 5 << 20);
   assert.match(status.textContent, /50%/);
   assert.equal(action.textContent, 'Downloading…');
+  assert.equal(action.hidden, true);
   h.state.pluginSetup.total = 0;
   h.render();
   assert.match(status.textContent, /5\.0 MB/);
@@ -611,6 +613,25 @@ test('after first setup the panel only shows plugin updates, not environment onb
   assert.equal(h.byID('setup-import').hidden, true);
   assert.equal(h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1).hidden, false);
   assert.equal(h.byID('setup-start').textContent, 'Close');
+  assert.equal(h.byID('setup-start').parent.hidden, true);
+  assert.equal(h.byID('setup-back').hidden, false);
+  assert.equal(h.byID('setup-back').parent, h.byID('plugin-setup').querySelector('.setup-heading'));
+});
+
+test('Escape returns from updates while the background download continues', () => {
+  const h = setupHarness('active');
+  Object.assign(h.state, { setupComplete: true, pluginSetupOpen: true });
+  Object.assign(h.state.pluginSetup, { status: 'downloading', checkingUpdate: true });
+  h.render();
+  h.byID('setup-back').addEventListener('click', () => {
+    h.state.pluginSetupOpen = false;
+    h.render();
+  });
+  const dialog = h.byID('plugin-setup').parent;
+  dialog.handlers.cancel({ preventDefault() {} });
+  assert.equal(dialog.open, false);
+  assert.equal(h.state.pluginSetup.status, 'downloading');
+  assert.deepEqual(h.calls, []);
 });
 
 test('updates use explicit check, available, latest and apply states without duplicate version prose', async () => {
@@ -633,8 +654,12 @@ test('updates use explicit check, available, latest and apply states without dup
   h.state.pluginSetup.checkingUpdate = false;
   Object.assign(h.state.pluginSetup, { latestVersion: '2.1.313', updateAvailable: true });
   h.render();
+  assert.equal(action.textContent, 'Check for Updates');
+  assert.equal(h.byID('plugin-update').hidden, true);
+  Object.assign(h.state.pluginSetup, { updateReady: true, updateVersion: '2.1.313' });
+  h.render();
   assert.equal(action.textContent, 'Update');
-  assert.equal(status.textContent, '2.1.313 available');
+  assert.equal(status.textContent, '2.1.313 ready to update');
   await action.onclick();
   assert.deepEqual(h.calls, ['update-plugin']);
   h.state.phase = 'setup';
@@ -647,24 +672,32 @@ test('updates use explicit check, available, latest and apply states without dup
   assert.equal(status.attributes.role, 'alert');
 });
 
-test('sidebar update shows download progress without opening a setup dialog', () => {
+test('update controls appear only after the silent download is ready', () => {
   const h = setupHarness('active');
   Object.assign(h.state, { setupComplete: true, pluginSetupOpen: false });
   Object.assign(h.state.pluginSetup, { status: 'idle', latestVersion: '2.1.313', updateAvailable: true });
   h.render();
   const indicator = h.byID('plugin-update');
+  assert.equal(indicator.hidden, true);
+  h.state.pluginSetupOpen = true;
+  Object.assign(h.state.pluginSetup, { status: 'downloading', targetVersion: '2.1.313', received: 5 << 20, total: 10 << 20 });
+  h.render();
+  assert.equal(indicator.hidden, true);
+  const card = h.byID('setup-steps').children[1];
+  assert.equal(card.querySelector('.setup-actions').children.at(-1).hidden, true);
+  assert.equal(h.byID('setup-progress').hidden, false);
+  assert.equal(h.byID('setup-back').hidden, false);
+  Object.assign(h.state.pluginSetup, { status: 'idle', checkingUpdate: true });
+  h.render();
+  assert.equal(indicator.hidden, true);
+  assert.equal(card.querySelector('.setup-actions').children.at(-1).hidden, true);
+  Object.assign(h.state.pluginSetup, { checkingUpdate: false, updateReady: true, updateVersion: '2.1.313' });
+  h.render();
   assert.equal(indicator.hidden, false);
   assert.equal(indicator.disabled, false);
   assert.equal(indicator.title, 'Update plugin to 2.1.313');
-  h.state.phase = 'preparing';
-  Object.assign(h.state.pluginSetup, { status: 'downloading', targetVersion: '2.1.313', received: 5 << 20, total: 10 << 20 });
-  h.render();
-  assert.equal(indicator.hidden, false);
-  assert.equal(indicator.disabled, true);
-  assert.match(indicator.title, /Downloading.*50%/);
-  assert.equal(h.byID('plugin-setup').parent.open, undefined);
-  h.state.phase = 'active';
-  Object.assign(h.state.pluginSetup, { status: 'idle', readyVersion: '2.1.313', updateAvailable: false });
+  assert.equal(card.querySelector('.setup-actions').children.at(-1).textContent, 'Update');
+  Object.assign(h.state.pluginSetup, { readyVersion: '2.1.313', updateAvailable: false, updateReady: false });
   h.render();
   assert.equal(indicator.hidden, true);
 });
@@ -717,18 +750,18 @@ test('failed activation and final prepare saves keep an offline-capable Retry vi
   }
 });
 
-test('cancelled updates retry the download rather than tearing down the active cached host', async () => {
+test('cancelled background updates retry checking without replacing the active host', async () => {
   for (const updateAvailable of [false, true]) {
     const h = setupHarness('active');
     Object.assign(h.state, { setupComplete: true, pluginSetupOpen: true });
-    Object.assign(h.state.pluginSetup, { status: 'cancelled', runtimeReady: true, updateAvailable, checkingUpdate: true });
+    Object.assign(h.state.pluginSetup, { status: 'cancelled', runtimeReady: true, updateAvailable, checkingUpdate: false });
     h.render();
     const action = h.byID('setup-steps').children[1].querySelector('.setup-actions').children.at(-1);
-    assert.equal(action.textContent, 'Retry');
+    assert.equal(action.textContent, 'Check for Updates');
     assert.equal(action.hidden, false);
     assert.equal(action.disabled, false);
     await action.onclick();
-    assert.deepEqual(h.calls, ['update-plugin']);
+    assert.deepEqual(h.calls, ['check-update']);
     assert.equal(h.byID('setup-start').textContent, 'Close');
   }
 });

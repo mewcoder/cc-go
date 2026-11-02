@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"cc-go/internal/plugin"
 )
@@ -22,16 +23,72 @@ func (a *App) checkPluginUpdate(ctx context.Context) error {
 	a.mu.Lock()
 	a.checkingUpdate, a.updateError = true, ""
 	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		a.checkingUpdate = false
+		a.mu.Unlock()
+	}()
 	version, err := plugin.LatestVersion(ctx, plugin.Platform())
 	a.mu.Lock()
-	a.checkingUpdate = false
 	if err != nil {
 		a.updateError = err.Error()
 	} else {
 		a.latestVersion = version
 	}
 	a.mu.Unlock()
-	return err
+	if err != nil {
+		return err
+	}
+	return a.stagePluginUpdate(ctx)
+}
+
+func (a *App) stagePluginUpdate(ctx context.Context) error {
+	a.mu.Lock()
+	if a.phase != "active" || !a.state.SetupComplete || !plugin.NewerVersion(a.latestVersion, a.version) ||
+		a.updateReady != nil && !plugin.NewerVersion(a.latestVersion, a.updateReady.Version) {
+		a.mu.Unlock()
+		return nil
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	a.updateCancel = cancel
+	a.updateDownload = plugin.DownloadProgress{}
+	a.updateDownloadAt = time.Now()
+	a.mu.Unlock()
+	defer cancel(nil)
+	// Download independently so chatting, opening sessions and switching projects
+	// remain available. Only cache validation shares the host operation lock.
+	download, err := plugin.Download(ctx, filepath.Join(a.cfg.DataDir, "vsix"), "latest", plugin.Platform(), func(progress plugin.DownloadProgress) {
+		a.mu.Lock()
+		a.updateDownload, a.updateDownloadAt = progress, time.Now()
+		a.mu.Unlock()
+	})
+	a.opMu.Lock()
+	defer a.opMu.Unlock()
+	if err == nil {
+		var prepared *plugin.Prepared
+		prepared, err = plugin.Prepare(download.Archive, filepath.Join(a.cfg.DataDir, "extensions"), plugin.Platform(), download.Version)
+		if err == nil {
+			_, err = plugin.BundledRuntime(prepared.ExtensionPath, plugin.Platform())
+		}
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.updateCancel = nil
+	if context.Cause(ctx) != nil {
+		err = context.Cause(ctx)
+	}
+	if err != nil {
+		a.updateError = err.Error()
+		if errors.Is(err, errDownloadCancelled) {
+			a.updateError = ""
+		}
+		return err
+	}
+	if plugin.NewerVersion(download.Version, a.version) {
+		a.updateReady = &download
+		a.latestVersion, a.updateError = download.Version, ""
+	}
+	return nil
 }
 
 func (a *App) updatePlugin(ctx context.Context) error {
@@ -43,6 +100,11 @@ func (a *App) updatePlugin(ctx context.Context) error {
 	if err := a.workspaceChangeErrorLocked(); err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	staged := a.updateReady
+	if a.phase == "active" && staged == nil {
+		a.mu.Unlock()
+		return errors.New("plugin update is not ready; it will be available after the background download completes")
 	}
 	previousPhase, previousStatus, previousLabel := a.phase, a.setupStatus, a.label
 	previousStep := a.setupStep
@@ -71,9 +133,15 @@ func (a *App) updatePlugin(ctx context.Context) error {
 		a.mu.Unlock()
 		return err
 	}
-	download, err := a.downloadVSIX(ctx, "latest")
-	if err != nil {
-		return restore(err)
+	var download plugin.Downloaded
+	if staged != nil {
+		download = *staged
+	} else {
+		var err error
+		download, err = a.downloadVSIX(ctx, "latest")
+		if err != nil {
+			return restore(err)
+		}
 	}
 	archive := download.Archive
 	a.mu.Lock()
@@ -123,6 +191,7 @@ func (a *App) updatePlugin(ctx context.Context) error {
 	}
 	a.mu.Lock()
 	a.latestVersion, a.updateError = a.version, ""
+	a.updateReady = nil
 	a.mu.Unlock()
 	if autoApply {
 		a.cleanupPluginCache()

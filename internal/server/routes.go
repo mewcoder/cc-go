@@ -131,7 +131,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	var result any = map[string]bool{"ok": true}
 	var err error
 	timeout := 2 * time.Minute
-	if r.URL.Path == "/api/retry" || r.URL.Path == "/api/update-plugin" {
+	if r.URL.Path == "/api/retry" || r.URL.Path == "/api/update-plugin" || r.URL.Path == "/api/update-check" {
 		timeout = 15 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)

@@ -24,12 +24,16 @@ func TestBackgroundUpdateDownloadFailureKeepsCurrentChat(t *testing.T) {
 	a.mu.Lock()
 	peer, active, archive := a.peer, a.active, a.state.Archive
 	a.mu.Unlock()
+	fixtureRegistry(t, "1.2.4")
 	transport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return nil, context.DeadlineExceeded
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/plugin.vsix" {
+			return nil, context.DeadlineExceeded
+		}
+		return transport.RoundTrip(r)
 	})
 	t.Cleanup(func() { http.DefaultTransport = transport })
-	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 400 {
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 400 {
 		t.Fatal("download failure not reported:", w.Code, w.Body.String())
 	}
 	a.mu.Lock()
@@ -39,7 +43,7 @@ func TestBackgroundUpdateDownloadFailureKeepsCurrentChat(t *testing.T) {
 	}
 }
 
-func TestUpdateAutomaticallyActivatesAndCleansOnlyAfterSuccess(t *testing.T) {
+func TestUpdateStagesSilentlyThenActivatesOfflineAndCleansOnlyAfterSuccess(t *testing.T) {
 	a := testApp(t)
 	prepareChatFixture(t, a)
 	if err := a.activate(t.Context()); err != nil {
@@ -64,8 +68,16 @@ func TestUpdateAutomaticallyActivatesAndCleansOnlyAfterSuccess(t *testing.T) {
 		if state["pluginSetupOpen"] != false {
 			t.Error("direct update opened setup before finishing")
 		}
-		if state["pluginUpdating"] != true || len(state["views"].([]map[string]any)) == 0 {
+		if state["phase"] != "active" || state["pluginUpdating"] != false || len(state["views"].([]map[string]any)) == 0 {
 			t.Error("background download replaced the active chat:", state["phase"], state["pluginUpdating"])
+		}
+		if state["pluginSetup"].(map[string]any)["updateReady"] != false {
+			t.Error("update was offered before download validation")
+		}
+		if !a.opMu.TryLock() {
+			t.Error("background download blocked session operations")
+		} else {
+			a.opMu.Unlock()
 		}
 		for _, file := range []string{oldRoot, oldArchive, imported} {
 			if _, err := os.Stat(file); err != nil {
@@ -73,6 +85,18 @@ func TestUpdateAutomaticallyActivatesAndCleansOnlyAfterSuccess(t *testing.T) {
 			}
 		}
 		return transport.RoundTrip(r)
+	})
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	setup := a.snapshot()["pluginSetup"].(map[string]any)
+	if setup["updateReady"] != true || setup["updateVersion"] != "1.2.4" || setup["readyVersion"] != "1.2.3" || a.peer != oldPeer || a.state.Archive != imported {
+		t.Fatal("staging changed the active installation or failed to publish the validated update")
+	}
+	// Clicking Update must use the prepared local package, including offline.
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Error("applying a staged update made a network request")
+		return nil, context.DeadlineExceeded
 	})
 	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 200 {
 		t.Fatal(w.Body.String())
@@ -126,6 +150,9 @@ func TestUpdateActivationFailureRestoresOldHostAndKeepsCache(t *testing.T) {
 		}
 		return transport.RoundTrip(r)
 	})
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 200 {
+		t.Fatal("stage broken-activation update:", w.Body.String())
+	}
 	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 400 || !strings.Contains(w.Body.String(), "fixture activation failed") {
 		t.Fatalf("activation failure not reported: %d %s", w.Code, w.Body.String())
 	}
@@ -137,6 +164,60 @@ func TestUpdateActivationFailureRestoresOldHostAndKeepsCache(t *testing.T) {
 	}
 	if _, err := os.Stat(oldPrepared.ExtensionPath); err != nil {
 		t.Fatal("failed update removed the previous cache:", err)
+	}
+}
+
+func TestActivePluginUpdateRequiresValidatedDownload(t *testing.T) {
+	a := testApp(t)
+	prepareChatFixture(t, a)
+	if err := a.activate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	peer := a.peer
+	requests := fixtureRegistry(t, "1.2.4")
+	a.latestVersion = "1.2.4"
+	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 400 {
+		t.Fatal("unstaged update accepted:", w.Code, w.Body.String())
+	}
+	if *requests != 0 || a.peer != peer || a.phase != "active" || a.stopping {
+		t.Fatal("unstaged update downloaded or interrupted the host")
+	}
+}
+
+func TestInvalidBackgroundPackageIsNotOfferedForUpdate(t *testing.T) {
+	a := testApp(t)
+	prepareChatFixture(t, a)
+	if err := a.activate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	peer, archive := a.peer, a.state.Archive
+	fixtureRegistry(t, "1.2.4", "9.9.9")
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 400 {
+		t.Fatal("invalid update was accepted:", w.Body.String())
+	}
+	if a.updateReady != nil || a.updateError == "" || a.peer != peer || a.state.Archive != archive || a.phase != "active" {
+		t.Fatal("invalid package became available or disturbed the current host")
+	}
+}
+
+func TestBackgroundPluginDownloadAllowsDraftsAndRunningConversations(t *testing.T) {
+	a := testApp(t)
+	prepareChatFixture(t, a)
+	if err := a.activate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	peer := a.peer
+	a.views[a.active].HasDraft = true
+	a.liveSessions["working"] = LiveSession{Status: "working"}
+	fixtureRegistry(t, "1.2.4")
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 200 {
+		t.Fatal("background download blocked by chat:", w.Body.String())
+	}
+	if a.updateReady == nil || a.peer != peer || a.phase != "active" || a.stopping {
+		t.Fatal("background download disturbed chat")
+	}
+	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 400 || a.peer != peer || a.updateReady == nil {
+		t.Fatal("applying update must preserve a busy chat and retain the staged package")
 	}
 }
 

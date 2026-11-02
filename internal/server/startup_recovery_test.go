@@ -337,7 +337,7 @@ func TestCancelledUpdateRetriesDownloadWithoutReplacingTheActiveHost(t *testing.
 			return res, err
 		}))
 		done := make(chan *httptest.ResponseRecorder, 1)
-		go func() { done <- postAPI(a, "/api/update-plugin", map[string]any{}) }()
+		go func() { done <- postAPI(a, "/api/update-check", map[string]any{}) }()
 		select {
 		case <-started:
 		case <-time.After(5 * time.Second):
@@ -367,11 +367,14 @@ func TestCancelledUpdateRetriesDownloadWithoutReplacingTheActiveHost(t *testing.
 		a.mu.Lock()
 		preserved = a.peer == peer && a.active == active && a.state.Archive == archive
 		a.mu.Unlock()
-		if !preserved || snapshot["phase"] != "active" || snapshot["pluginSetupOpen"] != false || snapshot["pluginUpdating"] != false || setup["status"] != "cancelled" || setup["runtimeReady"] != true || setup["updateAvailable"] != true {
+		if !preserved || snapshot["phase"] != "active" || snapshot["pluginSetupOpen"] != false || snapshot["pluginUpdating"] != false || setup["status"] != "idle" || setup["runtimeReady"] != true || setup["updateAvailable"] != true || setup["updateReady"] != false {
 			t.Fatal("cancel lost the usable old host or the pending update")
 		}
 	}
 	replaceRecoveryTransport(t, transport)
+	if w := postAPI(a, "/api/update-check", map[string]any{}); w.Code != 200 {
+		t.Fatalf("final download retry: %d %s", w.Code, w.Body.String())
+	}
 	if w := postAPI(a, "/api/update-plugin", map[string]any{}); w.Code != 200 {
 		t.Fatalf("final update retry: %d %s", w.Code, w.Body.String())
 	}
