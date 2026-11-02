@@ -84,7 +84,7 @@ CC_GO_NATIVE_VSIX_SMOKE=1 CC_GO_SMOKE_VSIX=/absolute/path/to/claude.vsix /tmp/cc
 3. 更新版本，检查并预览 Release 正文。例如下一版：
 
    ```sh
-   npm version 0.1.0-beta.11 --no-git-tag-version
+   npm version 0.1.0-beta.12 --no-git-tag-version
    npm run release:check
    npm run --silent release:notes
    npm test
@@ -94,9 +94,9 @@ CC_GO_NATIVE_VSIX_SMOKE=1 CC_GO_SMOKE_VSIX=/absolute/path/to/claude.vsix /tmp/cc
 
    ```sh
    git add CHANGELOG.md package.json package-lock.json
-   git commit -m "Release v0.1.0-beta.11"
-   git tag -a v0.1.0-beta.11 -m "CC Go v0.1.0-beta.11"
-   git push --atomic origin main refs/tags/v0.1.0-beta.11
+   git commit -m "Release v0.1.0-beta.12"
+   git tag -a v0.1.0-beta.12 -m "CC Go v0.1.0-beta.12"
+   git push --atomic origin main refs/tags/v0.1.0-beta.12
    ```
 
 标签必须与 `package.json` 版本一致，更新日志必须有唯一的对应版本、有效日期和非空内容，否则 Actions 在打包前停止。手动运行 Actions 只检查构建，不要求为开发中的版本提前填写发布记录。
